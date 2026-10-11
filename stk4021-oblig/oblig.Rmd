@@ -1,0 +1,270 @@
+---
+title: "STK4021 -- Mandatory assignment, Fall 2026"
+subtitle: "Bayesian inversion of seismic data"
+author: "NAME -- STK4021"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  pdf_document:
+    number_sections: false
+    fig_caption: true
+header-includes:
+  - \usepackage{amsmath,amssymb,bm,float}
+  - \newcommand{\vA}{\mathbf{A}}
+  - \newcommand{\vd}{\mathbf{d}}
+  - \newcommand{\vm}{\mathbf{m}}
+  - \newcommand{\vI}{\mathbf{I}}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE,
+                      fig.align = "center", fig.width = 7.5, fig.height = 3.6,
+                      out.width = "95%", fig.pos = "H")
+set.seed(4021)
+```
+
+# Self-report
+
+*To be written by the student: how the work proceeded, what was difficult,
+time-consuming or fun, what was relatively easy, collaboration and sources
+used (including AI tools).*
+
+\newpage
+
+# Data and forward operator
+
+```{r data}
+A  <- as.matrix(read.table("data/A.txt"))
+dimnames(A) <- NULL
+d0 <- scan("data/seis00.txt", quiet = TRUE)
+d1 <- scan("data/seis01.txt", quiet = TRUE)
+d2 <- scan("data/seis02.txt", quiet = TRUE)
+n  <- nrow(A)
+z  <- 1:n   # index (depth/time sample)
+```
+
+The forward operator $\vA$ is a $`r n`\times`r n`$ matrix. Each row contains the
+same wavelet, shifted one sample, applied to differences of $\vm$. In
+particular $\vA\mathbf 1=\mathbf 0$, so a constant shift of the profile is
+invisible in the data.
+
+# Part 1: Gaussian Bayesian inversion and simulation
+
+## 1a) Joint distribution and posterior
+
+Let $\bm\sim N(\bm\mu_m,\bm\Sigma_m)$ and $\bm\varepsilon\sim N(\mathbf 0,\sigma_\varepsilon^2\vI)$
+be independent, and $\vd=\vA\vm+\bm\varepsilon$. The vector $(\vm,\vd)$ is a linear
+transformation of the Gaussian vector $(\vm,\bm\varepsilon)$, so it is jointly Gaussian, and
+it is enough to find the first two moments:
+\begin{align*}
+E(\vd) &= \vA E(\vm) + E(\bm\varepsilon) = \vA\bm\mu_m,\\
+\operatorname{Cov}(\vd) &= \vA\operatorname{Cov}(\vm)\vA^\top + \operatorname{Cov}(\bm\varepsilon)
+   = \vA\bm\Sigma_m\vA^\top + \sigma_\varepsilon^2\vI,\\
+\operatorname{Cov}(\vd,\vm) &= \operatorname{Cov}(\vA\vm+\bm\varepsilon,\vm) = \vA\bm\Sigma_m ,
+\end{align*}
+using independence of $\vm$ and $\bm\varepsilon$. Hence
+$$
+\begin{pmatrix}\vm\\ \vd\end{pmatrix}\sim N\!\left(
+\begin{pmatrix}\bm\mu_m\\ \vA\bm\mu_m\end{pmatrix},
+\begin{pmatrix}\bm\Sigma_m & \bm\Sigma_m\vA^\top\\
+\vA\bm\Sigma_m & \vA\bm\Sigma_m\vA^\top+\sigma_\varepsilon^2\vI\end{pmatrix}\right).
+$$
+By the conditioning rule for the multivariate Gaussian, the posterior is
+$\vm\mid\vd\sim N(\bm\mu_{m\mid d},\bm\Sigma_{m\mid d})$ with
+\begin{align*}
+\bm\mu_{m\mid d} &= \bm\mu_m + \bm\Sigma_m\vA^\top\bm\Sigma_d^{-1}(\vd-\vA\bm\mu_m),\\
+\bm\Sigma_{m\mid d} &= \bm\Sigma_m - \bm\Sigma_m\vA^\top\bm\Sigma_d^{-1}\vA\bm\Sigma_m,
+\qquad \bm\Sigma_d=\vA\bm\Sigma_m\vA^\top+\sigma_\varepsilon^2\vI .
+\end{align*}
+The matrix $\mathbf K=\bm\Sigma_m\vA^\top\bm\Sigma_d^{-1}$ is the "gain": the posterior
+mean is the prior mean corrected by $\mathbf K$ times the data residual, and the
+posterior covariance does not depend on the observed $\vd$.
+
+```{r functions}
+# Prior covariance with exponential correlation function
+exp_cov <- function(n, sigma2, ell) {
+  D <- abs(outer(1:n, 1:n, "-"))
+  sigma2 * exp(-3 * D / ell)
+}
+
+# Gaussian posterior for m | d in the linear model d = A m + eps
+gauss_posterior <- function(d, A, mu, Sigma, sigma2_eps) {
+  Sigma_d <- A %*% Sigma %*% t(A) + sigma2_eps * diag(nrow(A))
+  K       <- Sigma %*% t(A) %*% solve(Sigma_d)        # gain matrix
+  mu_post <- drop(mu + K %*% (d - A %*% mu))
+  S_post  <- Sigma - K %*% A %*% Sigma
+  S_post  <- (S_post + t(S_post)) / 2                 # remove rounding asymmetry
+  list(mean = mu_post, cov = S_post, K = K)
+}
+
+# Draw B samples from N(mu, S); rows are samples
+rmvn <- function(B, mu, S) {
+  L <- chol(S + 1e-10 * diag(length(mu)))             # tiny jitter for stability
+  sweep(matrix(rnorm(B * length(mu)), B) %*% L, 2, mu, "+")
+}
+
+# Plot mean with pointwise 95% interval
+band_plot <- function(mean, sd, main, ylim = NULL, sims = NULL) {
+  lo <- mean - qnorm(0.975) * sd
+  hi <- mean + qnorm(0.975) * sd
+  if (is.null(ylim)) ylim <- range(lo, hi, sims)
+  plot(z, mean, type = "n", ylim = ylim, xlab = "Index i", ylab = "m_i", main = main)
+  polygon(c(z, rev(z)), c(lo, rev(hi)), col = "grey85", border = NA)
+  if (!is.null(sims)) matlines(z, t(sims), lty = 1, lwd = 1,
+                               col = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"))
+  lines(z, mean, lwd = 2)
+}
+```
+
+## 1b) Prior: mean, 95% interval and simulations
+
+With $(\mu,\sigma_m^2,\ell,\sigma_\varepsilon^2)=(0,1,20,0.04)$ the prior is stationary,
+so the marginal $m_i\sim N(0,1)$ for every $i$ and the 95% interval is $0\pm1.96$.
+Five realisations are drawn as $\vm=\bm\mu_m+\mathbf L^\top\mathbf z$ with
+$\bm\Sigma_m=\mathbf L^\top\mathbf L$ (Cholesky) and $\mathbf z\sim N(\mathbf 0,\vI)$.
+The correlation $\exp(-3|i-j|/\ell)$ drops to $e^{-3}\approx0.05$ at lag $\ell=20$, so the
+realisations are rough (exponential correlation) but vary on a scale of about 20 samples.
+
+```{r prior, fig.cap="Prior mean (black), pointwise 95\\% interval (grey) and five prior realisations."}
+mu0 <- 0; sigma2_m <- 1; ell <- 20; sigma2_eps <- 0.04
+mu_m    <- rep(mu0, n)
+Sigma_m <- exp_cov(n, sigma2_m, ell)
+
+prior_sims <- rmvn(5, mu_m, Sigma_m)
+band_plot(mu_m, sqrt(diag(Sigma_m)), "Prior", sims = prior_sims)
+```
+
+## 1c) Posterior given `seis00`
+
+```{r post00, fig.cap="Posterior mean (black) and pointwise 95\\% interval (grey) for seis00. Dashed: prior 95\\% limits."}
+post0 <- gauss_posterior(d0, A, mu_m, Sigma_m, sigma2_eps)
+sd0   <- sqrt(diag(post0$cov))
+band_plot(post0$mean, sd0, "Posterior, seis00", ylim = c(-3.5, 3.5))
+abline(h = c(-1, 1) * 1.96, lty = 2, col = "grey40")
+```
+
+```{r covimages, fig.width=7.5, fig.height=3.8, fig.cap="Prior (left) and posterior (right) covariance matrices, same colour scale."}
+cov_image <- function(S, main, zlim) {
+  image(z, z, S[, n:1], zlim = zlim, col = hcl.colors(64, "YlOrRd", rev = TRUE),
+        xlab = "i", ylab = "j", main = main, axes = FALSE, useRaster = TRUE)
+  axis(1); axis(2, at = n + 1 - pretty(z), labels = pretty(z))
+}
+zl <- range(Sigma_m, post0$cov)
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+cov_image(Sigma_m, "Prior covariance", zl)
+cov_image(post0$cov, "Posterior covariance", zl)
+```
+
+```{r sdsummary}
+sd_range <- range(sd0)
+w <- rep(1 / n, n)                                  # weights for the profile average
+var_level <- c(prior = drop(t(w) %*% Sigma_m %*% w),
+               posterior = drop(t(w) %*% post0$cov %*% w))
+```
+
+The posterior standard deviations lie in
+[`r round(sd_range[1], 2)`, `r round(sd_range[2], 2)`] compared with 1 in the prior.
+They are smallest in the interior and largest at the two ends, where fewer data rows
+see the parameters. The covariance images show what the data have resolved.
+The posterior variances are roughly halved, but the remaining covariance is spread
+much more widely around the diagonal, so posterior correlations decay slowly with
+lag. The wavelet in $\vA$ is band limited, and since $\vA\mathbf 1=\mathbf 0$ it
+cannot see the overall level or slow trends. The data therefore determine the
+short-scale *contrasts* in $\vm$, while the long-wavelength part of the profile keeps
+almost all of its prior uncertainty. For example, the variance of the profile average
+$\bar m=\frac1n\sum_i m_i$ is `r round(var_level["prior"], 3)` a priori and
+`r round(var_level["posterior"], 3)` a posteriori.
+
+## 1d) Exceedance volume
+
+$V=h(\vm)=\sum_i|m_i-c|\,I(m_i<c)$ with $c=-1$ is a non-linear function of $\vm$, so
+its posterior is found by Monte Carlo. We draw
+$\vm^{(1)},\dots,\vm^{(B)}$ iid from $N(\bm\mu_{m\mid d},\bm\Sigma_{m\mid d})$ and set
+$V^{(b)}=h(\vm^{(b)})$.
+
+```{r exceedance}
+c_lev <- -1
+h_V   <- function(m, c = c_lev) sum((c - m) * (m < c))
+
+B <- 100
+post_sims <- rmvn(B, post0$mean, post0$cov)
+V <- apply(post_sims, 1, h_V)
+
+V_summary <- c(mean = mean(V), median = median(V), sd = sd(V))
+knitr::kable(t(round(V_summary, 2)), caption = "Posterior summaries of $V$ from $B=100$ samples.")
+```
+
+```{r Vhist, fig.width=5.5, fig.height=3.4, fig.cap="Histogram of 100 posterior samples of $V$."}
+hist(V, breaks = 20, col = "grey80", border = "white", main = "", xlab = "V")
+abline(v = V_summary["mean"], lty = 1, lwd = 2, col = "#d95f02")
+abline(v = V_summary["median"], lty = 2, lwd = 2, col = "#1b9e77")
+legend("topright", c("mean", "median"), lty = 1:2, lwd = 2,
+       col = c("#d95f02", "#1b9e77"), bty = "n")
+```
+
+The distribution is strongly right-skewed: most profiles dip only slightly below
+$c$, while a few have long or deep excursions. Hence the mean is clearly larger than the
+median, and the standard deviation is of the same size as the mean.
+
+## 1e) Percentiles and their uncertainty
+
+```{r percentiles}
+Vs  <- sort(V)
+P10 <- Vs[10]; P90 <- Vs[90]
+
+# Number of samples below the true P10 is N ~ Bin(B, 0.1).
+# The interval [V_(r), V_(s)) contains P10 exactly when r <= N <= s - 1.
+r <- qbinom(0.025, B, 0.1)            # lower order statistic
+s <- qbinom(0.975, B, 0.1) + 1        # upper order statistic
+coverage <- pbinom(s - 1, B, 0.1) - pbinom(r - 1, B, 0.1)
+```
+
+A natural estimate of $P_{10}$ is the 10th smallest sample, and of $P_{90}$ the 90th:
+$\widehat P_{10}=V_{(10)}=`r round(P10, 2)`$ and $\widehat P_{90}=V_{(90)}=`r round(P90, 2)`$.
+
+For the uncertainty, let $N=\#\{b: V^{(b)}<P_{10}\}$. Each sample falls below $P_{10}$
+with probability $0.1$, independently, so $N\sim\mathrm{Bin}(B,0.1)$. The event
+$V_{(r)}\le P_{10}<V_{(s)}$ is the same as $r\le N\le s-1$, so
+$$
+P\big(V_{(r)}\le P_{10}<V_{(s)}\big)=\sum_{k=r}^{s-1}\binom{B}{k}0.1^k0.9^{B-k}.
+$$
+With $r=`r r`$ and $s=`r s`$ this probability is `r round(coverage, 3)`, which gives the
+distribution-free interval $[V_{(`r r`)},V_{(`r s`)}]=[`r round(Vs[r], 2)`,\ `r round(Vs[s], 2)`]$
+for $P_{10}$. The interval is wide relative to $\widehat P_{10}$, so $B=100$ is too small
+for a precise $P_{10}$. The relative width shrinks like $1/\sqrt B$. For example, with
+$B=10\,000$ the same construction uses order statistics around $1000\pm 59$.
+
+## 1f) Permutation test of exchangeability
+
+If the data were exchangeable, every ordering of $\vd$ would be equally likely, and
+the lag-1 correlation $\hat\rho_1=\operatorname{cor}(d_{1:n-1},d_{2:n})$ of the observed
+ordering would look like a typical value from random permutations.
+
+```{r permtest, fig.width=5.5, fig.height=3.4, fig.cap="Lag-1 correlation for 1000 random permutations of seis00 (histogram) and for the observed ordering (red line)."}
+lag1 <- function(x) cor(x[-1], x[-length(x)])
+rho_obs  <- lag1(d0)
+rho_perm <- replicate(1000, lag1(sample(d0)))
+p_value  <- (1 + sum(abs(rho_perm) >= abs(rho_obs))) / (1 + length(rho_perm))
+
+hist(rho_perm, breaks = 30, col = "grey80", border = "white", main = "",
+     xlab = "Lag-1 correlation", xlim = range(rho_perm, rho_obs) + c(-0.05, 0.05))
+abline(v = rho_obs, col = "red", lwd = 2)
+```
+
+The observed lag-1 correlation is $\hat\rho_1=`r round(rho_obs, 3)`$, while the
+permuted values lie in
+[`r round(min(rho_perm), 2)`, `r round(max(rho_perm), 2)`] (centred near $-1/n$).
+None of the 1000 permutations come close, so the Monte Carlo p-value is
+$`r format(p_value, digits = 2)`$ (the smallest possible with 1000 permutations), and
+exchangeability is clearly rejected. This is what the model predicts: under
+$\vd=\vA\vm+\bm\varepsilon$ the covariance $\vA\bm\Sigma_m\vA^\top+\sigma_\varepsilon^2\vI$ is far
+from the form $a\vI+b\mathbf 1\mathbf 1^\top$ that exchangeability requires. Neighbouring
+samples share the wavelet and are strongly correlated. An iid (or exchangeable)
+model for the seismic trace is therefore not appropriate, while the convolution
+model is consistent with the dependence we see.
+
+\newpage
+
+# Appendix: R code
+
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+```
