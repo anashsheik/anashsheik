@@ -29,94 +29,15 @@ used (including AI tools).*
 
 \newpage
 
-# Data and forward operator
-
 ```{r data}
 A  <- as.matrix(read.table("data/A.txt"))   # forward operator (n x n)
 dimnames(A) <- NULL
-d0 <- scan("data/seis00.txt", quiet = TRUE) # seismic traces
+d0 <- scan("data/seis00.txt", quiet = TRUE)
 d1 <- scan("data/seis01.txt", quiet = TRUE)
 d2 <- scan("data/seis02.txt", quiet = TRUE)
 n  <- nrow(A)
-z  <- 1:n                                   # index along the profile
-
-A_rowsum_max <- max(abs(A %*% rep(1, n)))   # check: A applied to a constant vector
-A_sv         <- svd(A)$d                    # singular values of A
+z  <- 1:n
 ```
-
-```{r dataplot, fig.height=3.2, fig.cap="The three observed seismic traces."}
-matplot(z, cbind(d0, d1, d2), type = "l", lty = 1, lwd = 1.5,
-        col = c("black", "#1b9e77", "#d95f02"), xlab = "Index i", ylab = "d_i",
-        ylim = c(-6, 9))
-legend("top", c("seis00", "seis01", "seis02"), lty = 1, lwd = 1.5,
-       col = c("black", "#1b9e77", "#d95f02"), bty = "n", horiz = TRUE)
-```
-
-The forward operator $\vA$ is a $`r n`\times`r n`$ matrix. Every row holds the same
-wavelet, shifted one sample, so $d_i$ depends on $\vm$ only through values near index
-$i$. One property is important for the interpretation. The rows of $\vA$ sum to zero,
-so $\vA\mathbf 1=\mathbf 0$ (numerically, $\max_i|(\vA\mathbf 1)_i|=`r signif(A_rowsum_max, 2)`$).
-Hence $\vA$ has a zero singular value (the smallest is
-`r signif(min(A_sv), 2)`, the largest `r round(max(A_sv), 2)`). A constant shift of
-the whole profile does not change the data, so it cannot be identified from the
-data. The data only carry information about *changes* in $\vm$.
-
-# Part 1: Gaussian Bayesian inversion and simulation
-
-## 1a) Joint distribution and posterior
-
-The model is $\vd=\vA\vm+\bm\varepsilon$ with $\vm\sim N(\bm\mu_m,\bm\Sigma_m)$,
-$\bm\varepsilon\sim N(\mathbf 0,\sigma_\varepsilon^2\vI)$, and $\vm$ and $\bm\varepsilon$
-independent. Because of independence, $(\vm,\bm\varepsilon)$ is jointly Gaussian with
-mean $(\bm\mu_m,\mathbf 0)$ and block-diagonal covariance
-$\operatorname{diag}(\bm\Sigma_m,\sigma_\varepsilon^2\vI)$. The pair $(\vm,\vd)$ is a linear
-transformation of this vector,
-$$
-\begin{pmatrix}\vm\\ \vd\end{pmatrix}=
-\begin{pmatrix}\vI & \mathbf 0\\ \vA & \vI\end{pmatrix}
-\begin{pmatrix}\vm\\ \bm\varepsilon\end{pmatrix},
-$$
-so $(\vm,\vd)$ is also jointly Gaussian. Its moments follow from linearity of
-expectation and the rules for covariances of linear combinations:
-\begin{align*}
-E(\vd) &= \vA E(\vm)+E(\bm\varepsilon)=\vA\bm\mu_m,\\
-\operatorname{Cov}(\vd) &= \vA\operatorname{Cov}(\vm)\vA^\top+\operatorname{Cov}(\bm\varepsilon)
-   =\vA\bm\Sigma_m\vA^\top+\sigma_\varepsilon^2\vI,\\
-\operatorname{Cov}(\vd,\vm) &= \operatorname{Cov}(\vA\vm+\bm\varepsilon,\vm)
-   =\vA\operatorname{Cov}(\vm,\vm)+\operatorname{Cov}(\bm\varepsilon,\vm)=\vA\bm\Sigma_m ,
-\end{align*}
-where $\operatorname{Cov}(\bm\varepsilon,\vm)=\mathbf 0$ by independence, and
-$\operatorname{Cov}(\vm,\vd)=\operatorname{Cov}(\vd,\vm)^\top=\bm\Sigma_m\vA^\top$. Hence
-$$
-\begin{pmatrix}\vm\\ \vd\end{pmatrix}\sim N\!\left(
-\begin{pmatrix}\bm\mu_m\\ \vA\bm\mu_m\end{pmatrix},
-\begin{pmatrix}\bm\Sigma_m & \bm\Sigma_m\vA^\top\\
-\vA\bm\Sigma_m & \vA\bm\Sigma_m\vA^\top+\sigma_\varepsilon^2\vI\end{pmatrix}\right).
-$$
-In particular, the marginal distribution of the data is
-$\vd\sim N(\vA\bm\mu_m,\bm\Sigma_d)$ with $\bm\Sigma_d=\vA\bm\Sigma_m\vA^\top+\sigma_\varepsilon^2\vI$.
-We use this again in Part 2.
-
-**Posterior.** For a partitioned Gaussian vector,
-$\bm Y_1\mid\bm Y_2=\bm y_2\sim N\big(\bm\mu_1+\bm\Sigma_{12}\bm\Sigma_{22}^{-1}(\bm y_2-\bm\mu_2),\;
-\bm\Sigma_{11}-\bm\Sigma_{12}\bm\Sigma_{22}^{-1}\bm\Sigma_{21}\big)$. With $\bm Y_1=\vm$
-and $\bm Y_2=\vd$ this gives
-$$
-p(\vm\mid\vd)=N(\vm;\bm\mu_{m\mid d},\bm\Sigma_{m\mid d}),
-$$
-\begin{align*}
-\bm\mu_{m\mid d} &= \bm\mu_m+\bm\Sigma_m\vA^\top\big(\vA\bm\Sigma_m\vA^\top+\sigma_\varepsilon^2\vI\big)^{-1}(\vd-\vA\bm\mu_m),\\
-\bm\Sigma_{m\mid d} &= \bm\Sigma_m-\bm\Sigma_m\vA^\top\big(\vA\bm\Sigma_m\vA^\top+\sigma_\varepsilon^2\vI\big)^{-1}\vA\bm\Sigma_m .
-\end{align*}
-The posterior mean is the prior mean plus a correction proportional to the data
-residual $\vd-\vA\bm\mu_m$. The posterior covariance is the prior covariance minus
-what the data explain, and it does not depend on the observed values of $\vd$.
-
-Each marginal of a Gaussian vector is Gaussian, so
-$m_i\mid\vd\sim N\big((\bm\mu_{m\mid d})_i,(\bm\Sigma_{m\mid d})_{ii}\big)$. The pointwise
-95% credibility interval used below is therefore
-$(\bm\mu_{m\mid d})_i\pm1.96\sqrt{(\bm\Sigma_{m\mid d})_{ii}}$, and the same holds for
-the prior.
 
 ```{r functions}
 # Prior covariance: exponential correlation function
@@ -125,7 +46,7 @@ exp_cov <- function(n, sigma2, ell) {
   sigma2 * exp(-3 * D / ell)
 }
 
-# Posterior of m | d for d = A m + eps (Gaussian conditioning, data-space form)
+# Posterior of m | d for d = A m + eps (Gaussian conditioning)
 gauss_posterior <- function(d, A, mu, Sigma, sigma2_eps) {
   Sigma_d <- A %*% Sigma %*% t(A) + sigma2_eps * diag(nrow(A))   # Cov(d)
   K       <- Sigma %*% t(A) %*% solve(Sigma_d)                   # Cov(m,d) Cov(d)^-1
@@ -154,21 +75,36 @@ band_plot <- function(mean, sd, main, ylim, sims = NULL) {
 }
 ```
 
-## 1b) Prior: mean, 95% interval and simulations
+# Part 1
 
-We use $\mu_{m,i}=\mu$ and $\Sigma_{m,ij}=\sigma_m^2\exp(-3|i-j|/\ell)$ with
-$(\mu,\sigma_m^2,\ell,\sigma_\varepsilon^2)=(0,1,20,0.04)$. The prior variance is
-$\Sigma_{m,ii}=\sigma_m^2=1$ for every $i$, so the prior expectation is $0$ and the
-95% credibility interval is $0\pm1.96$ for every component. The correlation between
-$m_i$ and $m_j$ is $\exp(-3|i-j|/20)$. It is $`r round(exp(-3/20), 2)`$ for neighbours,
-$`r round(exp(-3 * 10 / 20), 2)`$ at distance 10, and $e^{-3}\approx`r round(exp(-3), 2)`$
-at distance $\ell=20$.
+## 1a)
 
-Realisations are simulated with the linear-transform rule: if $\bm x\sim N(\mathbf 0,\vI)$
-and $\mathbf L\mathbf L^\top=\bm\Sigma_m$ (Cholesky factorisation), then
-$\bm\mu_m+\mathbf L\bm x\sim N(\bm\mu_m,\bm\Sigma_m)$.
+Since $\vm$ and $\bm\varepsilon$ are independent and Gaussian, $(\vm,\vd)$ is a linear
+transformation of a Gaussian vector and therefore jointly Gaussian, with
+\begin{align*}
+E(\vd) &= \vA\bm\mu_m,\\
+\operatorname{Cov}(\vd) &= \vA\bm\Sigma_m\vA^\top+\sigma_\varepsilon^2\vI \;=:\; \bm\Sigma_d,\\
+\operatorname{Cov}(\vd,\vm) &= \operatorname{Cov}(\vA\vm+\bm\varepsilon,\vm)=\vA\bm\Sigma_m,
+\end{align*}
+so
+$$
+\begin{pmatrix}\vm\\ \vd\end{pmatrix}\sim N\!\left(
+\begin{pmatrix}\bm\mu_m\\ \vA\bm\mu_m\end{pmatrix},
+\begin{pmatrix}\bm\Sigma_m & \bm\Sigma_m\vA^\top\\
+\vA\bm\Sigma_m & \bm\Sigma_d\end{pmatrix}\right).
+$$
+The conditional distribution of a partitioned Gaussian gives the posterior
+$\vm\mid\vd\sim N(\bm\mu_{m\mid d},\bm\Sigma_{m\mid d})$ with
+\begin{align*}
+\bm\mu_{m\mid d} &= \bm\mu_m+\bm\Sigma_m\vA^\top\bm\Sigma_d^{-1}(\vd-\vA\bm\mu_m),\\
+\bm\Sigma_{m\mid d} &= \bm\Sigma_m-\bm\Sigma_m\vA^\top\bm\Sigma_d^{-1}\vA\bm\Sigma_m .
+\end{align*}
+The pointwise 95% credibility interval for $m_i$ is
+$(\bm\mu_{m\mid d})_i\pm1.96\sqrt{(\bm\Sigma_{m\mid d})_{ii}}$.
 
-```{r prior, fig.cap="Prior expectation (black), pointwise 95\\% credibility interval (grey) and five simulated prior profiles."}
+## 1b)
+
+```{r prior, fig.cap="Prior expectation (black), 95\\% credibility interval (grey) and five simulated profiles."}
 mu <- 0; sigma2_m <- 1; ell <- 20; sigma2_eps <- 0.04
 mu_m    <- rep(mu, n)
 Sigma_m <- exp_cov(n, sigma2_m, ell)
@@ -178,21 +114,20 @@ prior_sims <- rmvn(5, mu_m, Sigma_m)
 band_plot(mu_m, sqrt(diag(Sigma_m)), "Prior", ylim = c(-3.5, 3.5), sims = prior_sims)
 ```
 
-The simulated profiles are irregular from sample to sample, which is typical of
-the exponential correlation function. They stay correlated over roughly 10--20
-samples and wander around 0 within about $\pm2$, as the prior specifies.
+Since $\Sigma_{m,ii}=1$, the prior is $m_i\sim N(0,1)$ and the interval is $0\pm1.96$ for
+all $i$. The profiles are simulated as $\bm\mu_m+\mathbf L\bm x$, with
+$\mathbf L\mathbf L^\top=\bm\Sigma_m$ (Cholesky) and $\bm x\sim N(\mathbf 0,\vI)$.
 
-## 1c) Posterior given `seis00`
+## 1c)
 
-```{r post00, fig.cap="Posterior expectation (black) and pointwise 95\\% credibility interval (grey) given seis00. Dashed lines: prior 95\\% limits; dotted line: the level $c=-1$ used in 1d."}
+```{r post00, fig.cap="Posterior expectation (black) and 95\\% credibility interval (grey) given seis00. Dashed: prior interval."}
 post0 <- gauss_posterior(d0, A, mu_m, Sigma_m, sigma2_eps)
 sd0   <- sqrt(diag(post0$cov))
 band_plot(post0$mean, sd0, "Posterior given seis00", ylim = c(-3.5, 3.5))
 abline(h = c(-1.96, 1.96), lty = 2, col = "grey40")
-abline(h = -1, lty = 3)
 ```
 
-```{r covimages, fig.width=7.5, fig.height=3.8, fig.cap="Prior (left) and posterior (right) covariance matrices on the same colour scale. Row index $i$ downwards, column index $j$ to the right."}
+```{r covimages, fig.width=7.5, fig.height=3.6, fig.cap="Prior (left) and posterior (right) covariance matrices, same colour scale."}
 cov_image <- function(S, main, zlim) {
   image(z, z, t(S)[, n:1], zlim = zlim, col = hcl.colors(64, "YlOrRd", rev = TRUE),
         xlab = "j", ylab = "i", main = main, axes = FALSE, useRaster = TRUE)
@@ -205,63 +140,18 @@ cov_image(Sigma_m, "Prior covariance", zl)
 cov_image(post0$cov, "Posterior covariance", zl)
 ```
 
-```{r postcheck}
-# Check 1: the parameter-space (precision) form gives the same posterior
-Q_post    <- solve(Sigma_m) + t(A) %*% A / sigma2_eps
-S_check   <- solve(Q_post)
-mu_check  <- S_check %*% (solve(Sigma_m) %*% mu_m + t(A) %*% d0 / sigma2_eps)
-check_err <- max(abs(S_check - post0$cov), abs(mu_check - post0$mean))
-
-# Numbers used in the discussion
-sd_range  <- range(sd0)
-mid       <- 51
-cor_post  <- post0$cov[mid, mid + c(1, 10, 20)] / post0$cov[mid, mid]
-cor_prior <- exp(-3 * c(1, 10, 20) / ell)
-w         <- rep(1 / n, n)                 # weights giving the profile average
-var_avg   <- c(prior = drop(t(w) %*% Sigma_m %*% w),
-               post  = drop(t(w) %*% post0$cov %*% w))
-low_idx   <- which(post0$mean < -1)
+```{r postnumbers}
+sd_range <- range(sd0)
+A_one    <- max(abs(A %*% rep(1, n)))      # A applied to a constant vector
 ```
 
-*Check of the computation.* The posterior can also be written in the
-parameter-space (precision) form
-$\bm\Sigma_{m\mid d}^{-1}=\bm\Sigma_m^{-1}+\vA^\top\vA/\sigma_\varepsilon^2$,
-$\bm\mu_{m\mid d}=\bm\Sigma_{m\mid d}\big(\bm\Sigma_m^{-1}\bm\mu_m+\vA^\top\vd/\sigma_\varepsilon^2\big)$.
-The two forms agree to within `r signif(check_err, 2)`, which confirms the computation.
+The posterior standard deviations are `r round(sd_range[1], 2)`--`r round(sd_range[2], 2)`,
+compared with 1 in the prior. The uncertainty is reduced, but much remains, and the
+posterior covariance is spread further from the diagonal. One reason is that
+$\vA\mathbf 1=\mathbf 0$ (the rows of $\vA$ sum to zero). The data therefore
+contain no information about the overall level of $\vm$, only about local changes.
 
-*Interpretation.*
-
-- **Mean.** The posterior expectation follows the data. It is pulled below zero
-  where the trace indicates a decrease in $\vm$, and it falls below $c=-1$ only at
-  indices `r paste(low_idx, collapse = ", ")`.
-- **Variance.** The posterior standard deviations lie between
-  `r round(sd_range[1], 2)` and `r round(sd_range[2], 2)`, compared with 1 in the
-  prior. In the interior the variance is roughly halved. It is larger near the two
-  ends, where fewer rows of $\vA$ involve the parameters.
-- **Correlation.** The covariance images show a second effect. In the prior, the
-  covariance is concentrated close to the diagonal. In the posterior, it is lower
-  on the diagonal but spread further out. For $i=`r mid`$, the posterior correlation
-  with $m_{i+1}$, $m_{i+10}$ and $m_{i+20}$ is
-  `r paste(round(cor_post, 2), collapse = ", ")`, compared with
-  `r paste(round(cor_prior, 2), collapse = ", ")` in the prior.
-- **Why.** This follows from $\vA\mathbf 1=\mathbf 0$ and the small singular values
-  of $\vA$. The data determine local changes in $\vm$ well, but a direction in
-  parameter space with zero singular value does not affect the data and keeps its
-  prior uncertainty. The variance of the profile average
-  $\bar m=\frac1n\sum_i m_i$ is `r round(var_avg["prior"], 3)` in the prior and
-  `r round(var_avg["post"], 3)` in the posterior, so it is essentially not reduced.
-  What remains is uncertainty in the overall level, shared by all components.
-  That shared uncertainty is the slowly decaying positive correlation in the
-  posterior.
-
-## 1d) Exceedance volume
-
-$V=h(\vm)=\sum_{i=1}^n|m_i-c|\,I(m_i<c)=\sum_{i=1}^n(c-m_i)\,I(m_i<c)$ with $c=-1$ is a
-non-linear function of $\vm$, and its posterior has no closed form. We therefore use
-Monte Carlo. We draw $\vm^{(1)},\dots,\vm^{(B)}$ independently from
-$N(\bm\mu_{m\mid d},\bm\Sigma_{m\mid d})$ (as in 1b, with the posterior Cholesky
-factor) and compute $V^{(b)}=h(\vm^{(b)})$. Then $V^{(1)},\dots,V^{(B)}$ is an
-independent sample from $p(V\mid\vd)$.
+## 1d)
 
 ```{r exceedance}
 c_lev <- -1
@@ -273,113 +163,47 @@ post_sims <- rmvn(B, post0$mean, post0$cov)
 V <- apply(post_sims, 1, h_V)                              # one V per posterior draw
 
 V_summary <- c(mean = mean(V), median = median(V), sd = sd(V))
-knitr::kable(t(round(V_summary, 2)),
-             caption = "Posterior summaries of $V$ from $B=100$ samples.")
+knitr::kable(t(round(V_summary, 2)), caption = "Posterior summaries of $V$ ($B=100$).")
 ```
 
-```{r Vhist, fig.width=5.5, fig.height=3.4, fig.cap="Histogram of the $B=100$ posterior samples of $V$, with the sample mean and median."}
+```{r Vhist, fig.width=5.5, fig.height=3.2, fig.cap="Histogram of 100 posterior samples of $V$."}
 hist(V, breaks = 20, col = "grey80", border = "white", main = "", xlab = "V")
-abline(v = V_summary["mean"],   lty = 1, lwd = 2, col = "#d95f02")
-abline(v = V_summary["median"], lty = 2, lwd = 2, col = "#1b9e77")
-legend("topright", c("mean", "median"), lty = 1:2, lwd = 2,
-       col = c("#d95f02", "#1b9e77"), bty = "n")
 ```
 
-The posterior of $V$ is strongly right-skewed. Most posterior profiles go only
-slightly below $c$, while a few have long or deep excursions and give large $V$.
-The mean (`r round(V_summary["mean"], 2)`) is therefore larger than the median
-(`r round(V_summary["median"], 2)`), and the standard deviation
-(`r round(V_summary["sd"], 2)`) is as large as the mean, so $V$ is very uncertain.
-`r sum(V == 0)` of the 100 samples have $V=0$. Although the posterior expectation
-is above $c$ at almost all indices, nearly every posterior profile goes below $c$
-somewhere. The posterior mean profile is much smoother than any single posterior
-realisation, and $h$ applied to it gives only $h(\bm\mu_{m\mid d})=`r round(h_V(post0$mean), 2)`$,
-far below the posterior mean of $V$. Since $h$ is non-linear,
-$E\{h(\vm)\mid\vd\}\neq h(E\{\vm\mid\vd\})$, which is why $V$ has to be computed from
-simulated profiles.
+We draw $\vm^{(b)}\sim N(\bm\mu_{m\mid d},\bm\Sigma_{m\mid d})$, $b=1,\dots,100$, and compute
+$V^{(b)}=h(\vm^{(b)})$. The posterior of $V$ is right-skewed, so the mean is larger
+than the median.
 
-## 1e) Percentiles and their uncertainty
+## 1e)
 
 ```{r percentiles}
-Vs  <- sort(V)                                      # order statistics V_(1) <= ... <= V_(B)
+Vs  <- sort(V)                                      # order statistics
 P10 <- Vs[10]
 P90 <- Vs[90]
 
-# N = number of samples below the true P10 ~ Bin(B, 0.1).
-# V_(r) <= P10 < V_(s)  <=>  r <= N <= s - 1.
+# N = number of samples below the true P10 ~ Bin(B, 0.1)
+# V_(r) <= P10 < V_(s)  <=>  r <= N <= s - 1
 r <- qbinom(0.025, B, 0.1)
 s <- qbinom(0.975, B, 0.1) + 1
 coverage <- pbinom(s - 1, B, 0.1) - pbinom(r - 1, B, 0.1)
-
-# Same construction for a larger sample, to judge whether B = 100 is enough
-B_big <- 10000
-set.seed(3)
-V_big  <- apply(rmvn(B_big, post0$mean, post0$cov), 1, h_V)
-Vs_big <- sort(V_big)
-r_big  <- qbinom(0.025, B_big, 0.1)
-s_big  <- qbinom(0.975, B_big, 0.1) + 1
-cov_big <- pbinom(s_big - 1, B_big, 0.1) - pbinom(r_big - 1, B_big, 0.1)
-
-tab_P10 <- data.frame(
-  B        = c(B, B_big),
-  estimate = c(P10, Vs_big[B_big / 10]),
-  r        = c(r, r_big),
-  s        = c(s, s_big),
-  lower    = c(Vs[r], Vs_big[r_big]),
-  upper    = c(Vs[s], Vs_big[s_big]),
-  coverage = c(coverage, cov_big))
 ```
 
-**Estimates.** Among $B=100$ sorted samples
-$V_{(1)}\le\dots\le V_{(100)}$, a fraction $k/100$ lies at or below $V_{(k)}$. The
-natural estimates are therefore
-$\widehat P_{10}=V_{(10)}=`r round(P10, 2)`$ and $\widehat P_{90}=V_{(90)}=`r round(P90, 2)`$.
-So about 80% of the posterior probability for $V$ lies between
-`r round(P10, 1)` and `r round(P90, 1)`.
+Estimates from the ordered samples: $\widehat P_{10}=V_{(10)}=`r round(P10, 2)`$ and
+$\widehat P_{90}=V_{(90)}=`r round(P90, 2)`$.
 
-**Uncertainty in $P_{10}$.** Let $N$ be the number of the $B$ samples that are
-below the true $P_{10}$. The samples are independent and each falls below $P_{10}$
-with probability $0.1$, so $N\sim\mathrm{Bin}(B,0.1)$. The true $P_{10}$ lies between
-the $r$-th and $s$-th order statistics exactly when between $r$ and $s-1$ samples
-fall below it:
+The number of samples below $P_{10}$ is $N\sim\mathrm{Bin}(100,0.1)$. Since
+$V_{(r)}\le P_{10}<V_{(s)}$ exactly when $r\le N\le s-1$,
 $$
-P\big(V_{(r)}\le P_{10}<V_{(s)}\big)=P(r\le N\le s-1)=\sum_{k=r}^{s-1}\binom{B}{k}0.1^k\,0.9^{B-k}.
+P\big(V_{(r)}\le P_{10}<V_{(s)}\big)=\sum_{k=r}^{s-1}\binom{100}{k}0.1^k0.9^{100-k}.
 $$
-This only requires the samples to be independent and $p(V\mid\vd)$ to be
-continuous around $P_{10}$. Here $V$ has a small probability mass at $V=0$, but
-$P_{10}>0$, so the condition holds, and no assumption about the shape of
-$p(V\mid\vd)$ is needed. We take $r$ and $s-1$ as the 2.5% and 97.5%
-quantiles of $\mathrm{Bin}(B,0.1)$, which gives about 95% probability.
+With $r=`r r`$ and $s=`r s`$ this probability is `r round(coverage, 3)`, which gives
+the interval $[V_{(`r r`)},V_{(`r s`)}]=[`r round(Vs[r], 2)`,\ `r round(Vs[s], 2)`]$ for
+$P_{10}$. The interval is wide compared with the estimate, so $B=100$ is not
+sufficient for a precise $P_{10}$, and $B$ should be increased.
 
-```{r P10table}
-knitr::kable(tab_P10, digits = c(0, 2, 0, 0, 2, 2, 3),
-             col.names = c("B", "estimate of P10", "r", "s",
-                           "V_(r)", "V_(s)", "probability"),
-             caption = "Estimate of $P_{10}$ and the order-statistic interval $[V_{(r)},V_{(s)}]$, with the binomial probability that it contains $P_{10}$.")
-```
+## 1f)
 
-With $B=100$ the interval is $[V_{(`r r`)},V_{(`r s`)}]=[`r round(Vs[r], 2)`,\ `r round(Vs[s], 2)`]$.
-That is wide compared with the estimate itself, so 100 samples are not enough to
-pin down $P_{10}$ (or $P_{90}$). With $B=10\,000$, the same construction gives the
-much narrower interval
-$[`r round(Vs_big[r_big], 2)`,\ `r round(Vs_big[s_big], 2)`]$. The width of the interval
-shrinks roughly like $1/\sqrt B$, because the standard deviation of $N/B$ is
-$\sqrt{0.1\cdot0.9/B}$.
-
-## 1f) Permutation test of exchangeability
-
-If $d_1,\dots,d_n$ are exchangeable, their joint distribution is unchanged by any
-permutation of the indices. Under this hypothesis, the observed ordering is just
-one of the $n!$ equally likely orderings. The value of any statistic for the
-observed ordering is then a typical draw from the distribution of the statistic
-over random permutations. As the statistic we use the lag-1 correlation
-$$
-\hat\rho_1=\operatorname{cor}\big((d_1,\dots,d_{n-1}),(d_2,\dots,d_n)\big),
-$$
-which measures dependence between neighbouring samples. Under exchangeability it
-should be close to the values from permuted data.
-
-```{r permtest, fig.width=5.5, fig.height=3.4, fig.cap="Lag-1 correlation for 1000 random permutations of seis00 (histogram) and for the observed ordering (red line)."}
+```{r permtest, fig.width=5.5, fig.height=3.2, fig.cap="Lag-1 correlation for 1000 permutations of seis00 (histogram) and for the observed data (red line)."}
 lag1 <- function(x) cor(x[-1], x[-length(x)])   # lag-1 correlation
 
 rho_obs <- lag1(d0)
@@ -390,27 +214,15 @@ n_extreme <- sum(abs(rho_perm) >= abs(rho_obs))
 hist(rho_perm, breaks = 30, col = "grey80", border = "white", main = "",
      xlab = "Lag-1 correlation", xlim = c(-0.4, 1))
 abline(v = rho_obs, col = "red", lwd = 2)
-legend(x = 0.25, y = par("usr")[4], c("permutations", "observed"), cex = 0.85, fill = c("grey80", NA),
-       border = c("white", NA), lty = c(NA, 1), lwd = c(NA, 2),
-       col = c(NA, "red"), bty = "n")
 ```
 
-The observed lag-1 correlation of seis00 is $\hat\rho_1=`r round(rho_obs, 3)`$. The
-1000 permuted values are centred close to zero (mean `r round(mean(rho_perm), 3)`)
-and range from `r round(min(rho_perm), 2)` to `r round(max(rho_perm), 2)`.
-`r if (n_extreme == 0) "None" else n_extreme` of the 1000 permutations gives a correlation as extreme as the
-observed one, so the estimated p-value is below $1/1000$. The claim that the data
-are exchangeable is clearly rejected. (The other two traces give the same picture,
-with lag-1 correlations `r round(lag1(d1), 2)` and `r round(lag1(d2), 2)`.)
-
-This agrees with our model. For exchangeable variables every pair $(d_i,d_j)$,
-$i\neq j$, has the same joint distribution and hence the same covariance. Under
-$\vd=\vA\vm+\bm\varepsilon$, the covariance matrix
-$\vA\bm\Sigma_m\vA^\top+\sigma_\varepsilon^2\vI$ is not of that form: neighbouring samples
-share the wavelet and parts of $\vm$ and are strongly correlated, while distant
-samples are nearly uncorrelated. A model that treats the seismic samples as
-exchangeable (for example iid given some parameter) is therefore wrong for these
-data. The ordering of the samples carries the information about the subsurface.
+If the data were exchangeable, the observed order would be as likely as any
+permutation, and $\hat\rho_1$ would look like the permuted values. The observed
+lag-1 correlation is $\hat\rho_1=`r round(rho_obs, 2)`$, while the permuted values lie in
+$[`r round(min(rho_perm), 2)`,\ `r round(max(rho_perm), 2)`]$.
+`r if (n_extreme == 0) "None" else n_extreme` of the 1000 permutations are as extreme
+($p<0.001$), so the claim of exchangeability is rejected. Neighbouring samples are
+strongly correlated, as expected from $\vd=\vA\vm+\bm\varepsilon$.
 
 \newpage
 
