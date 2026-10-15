@@ -30,48 +30,47 @@ used (including AI tools).*
 \newpage
 
 ```{r data}
-A  <- as.matrix(read.table("data/A.txt"))   # forward operator (n x n)
+# ---- Data ----
+A <- as.matrix(read.table("data/A.txt"))
 dimnames(A) <- NULL
-d0 <- scan("data/seis00.txt", quiet = TRUE)
-d1 <- scan("data/seis01.txt", quiet = TRUE)
-d2 <- scan("data/seis02.txt", quiet = TRUE)
-n  <- nrow(A)
-z  <- 1:n
+d00 <- scan("data/seis00.txt", quiet = TRUE)
+d01 <- scan("data/seis01.txt", quiet = TRUE)
+d02 <- scan("data/seis02.txt", quiet = TRUE)
+n <- nrow(A)
+idx <- 1:n
 ```
 
 ```{r functions}
-# Prior covariance: exponential correlation function
-exp_cov <- function(n, sigma2, ell) {
-  D <- abs(outer(1:n, 1:n, "-"))           # matrix of |i - j|
-  sigma2 * exp(-3 * D / ell)
+# ---- Helper functions ----
+
+# exponential covariance, S_ij = s2 * exp(-3|i-j|/l)
+cov_exp <- function(n, s2, l) {
+  s2 * exp(-3 * abs(outer(1:n, 1:n, "-")) / l)
 }
 
-# Posterior of m | d for d = A m + eps (Gaussian conditioning)
-gauss_posterior <- function(d, A, mu, Sigma, sigma2_eps) {
-  Sigma_d <- A %*% Sigma %*% t(A) + sigma2_eps * diag(nrow(A))   # Cov(d)
-  K       <- Sigma %*% t(A) %*% solve(Sigma_d)                   # Cov(m,d) Cov(d)^-1
-  mu_post <- drop(mu + K %*% (d - A %*% mu))
-  S_post  <- Sigma - K %*% A %*% Sigma
-  S_post  <- (S_post + t(S_post)) / 2      # make exactly symmetric (rounding)
-  list(mean = mu_post, cov = S_post)
+# posterior of m given d (Gaussian conditioning, 1a)
+post_m <- function(d, mu, S, s2e) {
+  S_d <- A %*% S %*% t(A) + s2e * diag(n)
+  K <- S %*% t(A) %*% solve(S_d)
+  S_post <- S - K %*% A %*% S
+  list(mean = drop(mu + K %*% (d - A %*% mu)),
+       cov = (S_post + t(S_post)) / 2)
 }
 
-# Simulate B draws from N(mu, S): m = mu + L x, L L^T = S, x ~ N(0, I)
-rmvn <- function(B, mu, S) {
-  L <- t(chol(S + 1e-10 * diag(length(mu))))   # lower Cholesky factor (tiny jitter)
-  X <- matrix(rnorm(length(mu) * B), length(mu), B)
-  t(mu + L %*% X)                               # one draw per row
+# k draws from N(mu, S), one per row
+draw_mvn <- function(k, mu, S) {
+  L <- t(chol(S + 1e-10 * diag(length(mu))))
+  Z <- matrix(rnorm(length(mu) * k), length(mu), k)
+  t(mu + L %*% Z)
 }
 
-# Mean with pointwise 95% credibility band (and optional realisations)
-band_plot <- function(mean, sd, main, ylim, sims = NULL) {
-  lo <- mean - 1.96 * sd
-  hi <- mean + 1.96 * sd
-  plot(z, mean, type = "n", ylim = ylim, xlab = "Index i", ylab = "m_i", main = main)
-  polygon(c(z, rev(z)), c(lo, rev(hi)), col = "grey85", border = NA)
-  if (!is.null(sims)) matlines(z, t(sims), lty = 1, lwd = 1,
-                               col = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"))
-  lines(z, mean, lwd = 2)
+# mean with 95% band, optionally some realisations on top
+plot_band <- function(mean, sd, title, ylim, sims = NULL) {
+  plot(idx, mean, type = "n", ylim = ylim, xlab = "i", ylab = "m", main = title)
+  polygon(c(idx, rev(idx)), c(mean - 1.96 * sd, rev(mean + 1.96 * sd)),
+          col = "grey85", border = NA)
+  if (!is.null(sims)) matlines(idx, t(sims), lty = 1, col = 2:6)
+  lines(idx, mean, lwd = 2)
 }
 ```
 
@@ -102,50 +101,53 @@ Conditioning on $\vd$ gives $\vm\mid\vd\sim N(\mu_{m\mid d},\Sigma_{m\mid d})$ w
 ## 1b)
 
 ```{r prior, fig.cap="Prior expectation (black), 95\\% credibility interval (grey) and five simulated profiles."}
-mu <- 0; sigma2_m <- 1; ell <- 20; sigma2_eps <- 0.04
-mu_m    <- rep(mu, n)
-Sigma_m <- exp_cov(n, sigma2_m, ell)
+# ---- 1b ----
+mu0 <- 0; s2m <- 1; l <- 20; s2e <- 0.04
+mu_prior <- rep(mu0, n)
+S_prior <- cov_exp(n, s2m, l)
 
 set.seed(1)
-prior_sims <- rmvn(5, mu_m, Sigma_m)
-band_plot(mu_m, sqrt(diag(Sigma_m)), "Prior", ylim = c(-3.5, 3.5), sims = prior_sims)
+prior_draws <- draw_mvn(5, mu_prior, S_prior)
+plot_band(mu_prior, sqrt(diag(S_prior)), "Prior", c(-3.5, 3.5), prior_draws)
 ```
 
 ## 1c)
 
-```{r post00, fig.cap="Posterior expectation (black) and 95\\% credibility interval (grey) given seis00. Dashed: prior interval."}
-post0 <- gauss_posterior(d0, A, mu_m, Sigma_m, sigma2_eps)
-sd0   <- sqrt(diag(post0$cov))
-band_plot(post0$mean, sd0, "Posterior given seis00", ylim = c(-3.5, 3.5))
+```{r post00, fig.cap="Posterior expectation (black) and 95\\% credibility interval (grey) for seis00. Dashed: prior interval."}
+# ---- 1c ----
+post00 <- post_m(d00, mu_prior, S_prior, s2e)
+plot_band(post00$mean, sqrt(diag(post00$cov)), "Posterior, seis00", c(-3.5, 3.5))
 abline(h = c(-1.96, 1.96), lty = 2, col = "grey40")
 ```
 
 ```{r covimages, fig.width=7.5, fig.height=3.6, fig.cap="Prior (left) and posterior (right) covariance matrices, same colour scale."}
-cov_image <- function(S, main, zlim) {
-  image(z, z, t(S)[, n:1], zlim = zlim, col = hcl.colors(64, "YlOrRd", rev = TRUE),
-        xlab = "j", ylab = "i", main = main, axes = FALSE, useRaster = TRUE)
-  axis(1); axis(2, at = n + 1 - c(1, 20, 40, 60, 80, 100), labels = c(1, 20, 40, 60, 80, 100))
+plot_cov <- function(S, title, zlim) {
+  image(idx, idx, t(S)[, n:1], zlim = zlim, col = hcl.colors(64, "YlOrRd", rev = TRUE),
+        xlab = "j", ylab = "i", main = title, axes = FALSE)
+  axis(1)
+  axis(2, at = n + 1 - c(1, 20, 40, 60, 80, 100), labels = c(1, 20, 40, 60, 80, 100))
   box()
 }
-zl <- range(Sigma_m, post0$cov)
+zlim <- range(S_prior, post00$cov)
 par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
-cov_image(Sigma_m, "Prior covariance", zl)
-cov_image(post0$cov, "Posterior covariance", zl)
+plot_cov(S_prior, "Prior covariance", zlim)
+plot_cov(post00$cov, "Posterior covariance", zlim)
 ```
 
 ## 1d)
 
 ```{r exceedance}
-c_lev <- -1
-h_V   <- function(m, c = c_lev) sum((c - m) * (m < c))   # exceedance volume
+# ---- 1d ----
+cval <- -1
+volume <- function(m) sum((cval - m) * (m < cval))
 
 B <- 100
 set.seed(2)
-post_sims <- rmvn(B, post0$mean, post0$cov)
-V <- apply(post_sims, 1, h_V)                              # one V per posterior draw
+m_draws <- draw_mvn(B, post00$mean, post00$cov)
+V <- apply(m_draws, 1, volume)
 
-V_summary <- c(mean = mean(V), median = median(V), sd = sd(V))
-knitr::kable(t(round(V_summary, 2)), caption = "Posterior summaries of $V$ ($B=100$).")
+V_stats <- c(mean = mean(V), median = median(V), sd = sd(V))
+knitr::kable(t(round(V_stats, 2)), caption = "Posterior mean, median and sd of $V$ ($B=100$).")
 ```
 
 ```{r Vhist, fig.width=5.5, fig.height=3.2, fig.cap="Histogram of 100 posterior samples of $V$."}
@@ -155,15 +157,15 @@ hist(V, breaks = 20, col = "grey80", border = "white", main = "", xlab = "V")
 ## 1e)
 
 ```{r percentiles}
-Vs  <- sort(V)                                      # order statistics
-P10 <- Vs[10]
-P90 <- Vs[90]
+# ---- 1e ----
+V_sorted <- sort(V)
+P10 <- V_sorted[10]
+P90 <- V_sorted[90]
 
-# N = number of samples below the true P10 ~ Bin(B, 0.1)
-# V_(r) <= P10 < V_(s)  <=>  r <= N <= s - 1
+# number below P10 is Bin(B, 0.1)
 r <- qbinom(0.025, B, 0.1)
 s <- qbinom(0.975, B, 0.1) + 1
-coverage <- pbinom(s - 1, B, 0.1) - pbinom(r - 1, B, 0.1)
+cover <- pbinom(s - 1, B, 0.1) - pbinom(r - 1, B, 0.1)
 ```
 
 We use the 10th and 90th smallest of the 100 samples:
@@ -174,25 +176,25 @@ between the $r$-th and $s$-th smallest sample when $r\le N\le s-1$:
 $$
 P\big(V_{(r)}\le P_{10}<V_{(s)}\big)=\sum_{k=r}^{s-1}\binom{100}{k}0.1^k0.9^{100-k}.
 $$
-With $r=`r r`$ and $s=`r s`$ this is `r round(coverage, 3)`, so a 95% interval for $P_{10}$ is
-$[`r round(Vs[r], 2)`,\ `r round(Vs[s], 2)`]$. This is wide, so 100 samples is not enough.
+With $r=`r r`$ and $s=`r s`$ this is `r round(cover, 3)`, so a 95% interval for $P_{10}$ is
+$[`r round(V_sorted[r], 2)`,\ `r round(V_sorted[s], 2)`]$. This is wide, so 100 samples is not enough.
 
 ## 1f)
 
 ```{r permtest, fig.width=5.5, fig.height=3.2, fig.cap="Lag-1 correlation for 1000 permutations of seis00 (histogram) and for the observed data (red line)."}
-lag1 <- function(x) cor(x[-1], x[-length(x)])   # lag-1 correlation
+# ---- 1f ----
+lag1 <- function(x) cor(x[-1], x[-length(x)])
 
-rho_obs <- lag1(d0)
+rho <- lag1(d00)
 set.seed(4)
-rho_perm <- replicate(1000, lag1(sample(d0)))    # sample() gives a random permutation
-n_extreme <- sum(abs(rho_perm) >= abs(rho_obs))
+rho_perm <- replicate(1000, lag1(sample(d00)))
 
 hist(rho_perm, breaks = 30, col = "grey80", border = "white", main = "",
      xlab = "Lag-1 correlation", xlim = c(-0.4, 1))
-abline(v = rho_obs, col = "red", lwd = 2)
+abline(v = rho, col = "red", lwd = 2)
 ```
 
-The observed lag-1 correlation is `r round(rho_obs, 2)`, larger than all 1000 permuted
+The observed lag-1 correlation is `r round(rho, 2)`, larger than all 1000 permuted
 values ($p<0.001$). The data are therefore not exchangeable.
 
 # Part 2
@@ -212,81 +214,86 @@ $$
 since the uniform prior and the normalising constant do not depend on $(T,B)$.
 
 ```{r p2setup}
+# ---- 2a ----
 dmu <- 5
-G   <- subset(expand.grid(T = 30:60, B = 40:70), T <= B)    # admissible (T, B)
-G$dZ <- G$B - G$T + 1                                       # thickness
+pairs <- subset(expand.grid(T = 30:60, B = 40:70), T <= B)
+pairs$dZ <- pairs$B - pairs$T + 1
 
-# Prior mean for a zone from T to B (T = NA: no zone)
-mu_TB <- function(T, B) {
-  m <- rep(mu, n)
-  if (!is.na(T)) m[T:B] <- mu - dmu
+# prior mean with a zone from T to B (T = NA means no zone)
+zone_mean <- function(T, B) {
+  m <- rep(mu0, n)
+  if (!is.na(T)) m[T:B] <- mu0 - dmu
   m
 }
 
-Sigma_d <- A %*% Sigma_m %*% t(A) + sigma2_eps * diag(n)
-L_d     <- t(chol(Sigma_d))                                 # Sigma_d = L_d L_d^T
+S_d <- A %*% S_prior %*% t(A) + s2e * diag(n)
+L_d <- t(chol(S_d))
 
-# log p(d | mean) up to a constant common to all models
-loglik <- function(d, mean_m) {
-  r <- forwardsolve(L_d, d - A %*% mean_m)                  # L_d^-1 (d - A mu)
-  -0.5 * sum(r^2)
+# log p(d | T, B) without the constant
+loglik <- function(d, mu, L = L_d) {
+  e <- forwardsolve(L, d - A %*% mu)
+  -0.5 * sum(e^2)
 }
 
-log_sum_exp <- function(x) max(x) + log(sum(exp(x - max(x))))
+logsumexp <- function(x) max(x) + log(sum(exp(x - max(x))))
 
-zone_posterior <- function(d) {
-  ll <- sapply(seq_len(nrow(G)), function(k) loglik(d, mu_TB(G$T[k], G$B[k])))
-  list(ll = ll, post = exp(ll - log_sum_exp(ll)))           # uniform prior cancels
+post_TB <- function(d, L = L_d) {
+  ll <- sapply(1:nrow(pairs), function(k) loglik(d, zone_mean(pairs$T[k], pairs$B[k]), L))
+  list(ll = ll, prob = exp(ll - logsumexp(ll)))
 }
 
-zp1 <- zone_posterior(d1)
-zp2 <- zone_posterior(d2)
+zone01 <- post_TB(d01)
+zone02 <- post_TB(d02)
 ```
 
 ```{r heatmaps, fig.width=7.5, fig.height=3.6, fig.cap="Joint posterior $p(T,B\\mid d)$ for seis01 (left) and seis02 (right). Grey: inadmissible pairs."}
-heat <- function(post, main) {
-  M <- matrix(NA, 31, 31, dimnames = list(30:60, 40:70))
-  M[cbind(G$T - 29, G$B - 39)] <- post
+plot_heat <- function(prob, title) {
+  M <- matrix(NA, 31, 31)
+  M[cbind(pairs$T - 29, pairs$B - 39)] <- prob
   image(30:60, 40:70, M, col = hcl.colors(64, "YlOrRd", rev = TRUE),
-        xlab = "Top T", ylab = "Base B", main = main)
+        xlab = "T", ylab = "B", main = title)
   image(30:60, 40:70, ifelse(is.na(M), 1, NA), col = "grey85", add = TRUE)
   box()
 }
 par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
-heat(zp1$post, "seis01")
-heat(zp2$post, "seis02")
+plot_heat(zone01$prob, "seis01")
+plot_heat(zone02$prob, "seis02")
 ```
 
 ```{r priormarg, fig.width=7.5, fig.height=2.4, fig.cap="Marginal prior of top $T$, base $B$ and thickness $\\Delta Z$ (uniform prior on $\\mathcal G$)."}
-marg <- function(w, v, levels) sapply(levels, function(x) sum(w[v == x]))
-prior_G <- rep(1 / nrow(G), nrow(G))
+marginal <- function(w, x, vals) sapply(vals, function(v) sum(w[x == v]))
+prior_TB <- rep(1 / nrow(pairs), nrow(pairs))
+
 par(mfrow = c(1, 3), mar = c(4, 4, 1, 1))
-plot(30:60, marg(prior_G, G$T,  30:60), type = "h", lwd = 3, xlab = "Top T",  ylab = "Prior prob.")
-plot(40:70, marg(prior_G, G$B,  40:70), type = "h", lwd = 3, xlab = "Base B", ylab = "Prior prob.")
-plot(1:41,  marg(prior_G, G$dZ, 1:41),  type = "h", lwd = 3, xlab = "Thickness dZ", ylab = "Prior prob.")
+plot(30:60, marginal(prior_TB, pairs$T, 30:60), type = "h", lwd = 3, xlab = "T", ylab = "Prior")
+plot(40:70, marginal(prior_TB, pairs$B, 40:70), type = "h", lwd = 3, xlab = "B", ylab = "Prior")
+plot(1:41, marginal(prior_TB, pairs$dZ, 1:41), type = "h", lwd = 3, xlab = "dZ", ylab = "Prior")
 ```
 
 ```{r postmarg, fig.width=7.5, fig.height=4.4, fig.cap="Marginal posterior of $T$, $B$ and $\\Delta Z$. Top row: seis01, bottom row: seis02."}
 par(mfrow = c(2, 3), mar = c(4, 4, 1, 1))
-for (zp in list(zp1, zp2)) {
-  plot(30:60, marg(zp$post, G$T,  30:60), type = "h", lwd = 3, ylim = c(0, 1), xlab = "Top T",  ylab = "Posterior prob.")
-  plot(40:70, marg(zp$post, G$B,  40:70), type = "h", lwd = 3, ylim = c(0, 1), xlab = "Base B", ylab = "Posterior prob.")
-  plot(1:41,  marg(zp$post, G$dZ, 1:41),  type = "h", lwd = 3, ylim = c(0, 1), xlab = "Thickness dZ", ylab = "Posterior prob.")
+for (z in list(zone01, zone02)) {
+  plot(30:60, marginal(z$prob, pairs$T, 30:60), type = "h", lwd = 3, ylim = c(0, 1),
+       xlab = "T", ylab = "Posterior")
+  plot(40:70, marginal(z$prob, pairs$B, 40:70), type = "h", lwd = 3, ylim = c(0, 1),
+       xlab = "B", ylab = "Posterior")
+  plot(1:41, marginal(z$prob, pairs$dZ, 1:41), type = "h", lwd = 3, ylim = c(0, 1),
+       xlab = "dZ", ylab = "Posterior")
 }
 ```
 
 ```{r p2summary}
-summ <- function(post) {
-  k <- which.max(post)
-  c(T = G$T[k], B = G$B[k], dZ = G$dZ[k], prob = post[k], E_dZ = sum(post * G$dZ))
+best_pair <- function(prob) {
+  k <- which.max(prob)
+  c(T = pairs$T[k], B = pairs$B[k], dZ = pairs$dZ[k], prob = prob[k])
 }
-tab2a <- rbind(seis01 = summ(zp1$post), seis02 = summ(zp2$post))
+best <- rbind(seis01 = best_pair(zone01$prob), seis02 = best_pair(zone02$prob))
 ```
 
 The prior marginals are not uniform, since the number of possible partners varies.
 The posterior puts almost all mass on $(41,46)$ for seis01 (probability
-`r round(tab2a[1, "prob"], 3)`) and $(41,61)$ for seis02 (probability
-`r round(tab2a[2, "prob"], 3)`), i.e. thickness `r tab2a[1, "dZ"]` and `r tab2a[2, "dZ"]`.
+`r round(best[1, "prob"], 3)`) and $(41,61)$ for seis02 (probability
+`r round(best[2, "prob"], 3)`), i.e. thickness `r best[1, "dZ"]` and `r best[2, "dZ"]`.
 The data determine the zone almost exactly.
 
 ## 2b)
@@ -304,16 +311,17 @@ P(\text{no zone}\mid\vd)=\frac{\tfrac12\,p(\vd\mid\text{no zone})}
 $$
 
 ```{r p2b}
+# ---- 2b ----
 p0 <- 1 / 2
-post_zero <- function(zp, d) {
-  l0 <- log(p0)     + loglik(d, mu_TB(NA, NA))
-  lz <- log(1 - p0) + log_sum_exp(zp$ll) - log(nrow(G))
-  exp(l0 - log_sum_exp(c(l0, lz)))
+prob_nozone <- function(z, d) {
+  l0 <- log(p0) + loglik(d, zone_mean(NA, NA))
+  l1 <- log(1 - p0) + logsumexp(z$ll) - log(nrow(pairs))
+  exp(l0 - logsumexp(c(l0, l1)))
 }
-pz <- c(seis01 = post_zero(zp1, d1), seis02 = post_zero(zp2, d2))
+p_nozone <- c(seis01 = prob_nozone(zone01, d01), seis02 = prob_nozone(zone02, d02))
 ```
 
-This gives $P(\text{no zone}\mid\vd)=`r signif(pz[1], 2)`$ for seis01 and $`r signif(pz[2], 2)`$ for seis02.
+This gives $P(\text{no zone}\mid\vd)=`r signif(p_nozone[1], 2)`$ for seis01 and $`r signif(p_nozone[2], 2)`$ for seis02.
 
 ## 2c)
 
@@ -330,29 +338,29 @@ We find $E(V\mid\vd)$ by simulation: draw $(T,B)$ (or no zone) from the posterio
 draw $\vm$ from the posterior in 1a with prior mean $\mu_m^{T,B}$, and compute $V$.
 
 ```{r p2c}
-a <- 1; b <- 10; B_mc <- 5000
-K_gain <- Sigma_m %*% t(A) %*% solve(Sigma_d)
-L_post <- t(chol(post0$cov + 1e-10 * diag(n)))             # same posterior covariance as 1c
+# ---- 2c ----
+a <- 1; b <- 10; nsim <- 5000
+K <- S_prior %*% t(A) %*% solve(S_d)
+L_post <- t(chol(post00$cov + 1e-10 * diag(n)))
 
-sim_V <- function(zp, d, pz0) {
-  w   <- c(pz0, (1 - pz0) * zp$post)                       # no zone + all (T, B)
-  Tm  <- c(NA, G$T); Bm <- c(NA, G$B)
-  idx <- sample(length(w), B_mc, replace = TRUE, prob = w)
-  sapply(idx, function(k) {
-    mu_k <- mu_TB(Tm[k], Bm[k])
-    m    <- mu_k + K_gain %*% (d - A %*% mu_k) + L_post %*% rnorm(n)
-    h_V(m)
+sim_volume <- function(z, d, p_no) {
+  w <- c(p_no, (1 - p_no) * z$prob)
+  Ts <- c(NA, pairs$T); Bs <- c(NA, pairs$B)
+  pick <- sample(length(w), nsim, replace = TRUE, prob = w)
+  sapply(pick, function(k) {
+    mu_k <- zone_mean(Ts[k], Bs[k])
+    m <- mu_k + K %*% (d - A %*% mu_k) + L_post %*% rnorm(n)
+    volume(m)
   })
 }
 set.seed(5)
-V1 <- sim_V(zp1, d1, pz[1])
-V2 <- sim_V(zp2, d2, pz[2])
-profit <- list(seis01 = a * V1 - b, seis02 = a * V2 - b)
+V01 <- sim_volume(zone01, d01, p_nozone[1])
+V02 <- sim_volume(zone02, d02, p_nozone[2])
+profit <- list(seis01 = a * V01 - b, seis02 = a * V02 - b)
 
-tab2c <- t(sapply(profit, function(x)
-  c(EV = mean(x + b) / a, E_profit = mean(x), P_loss = mean(x < 0),
-    P10 = unname(quantile(x, 0.1)), P50 = median(x), P90 = unname(quantile(x, 0.9)))))
-knitr::kable(tab2c, digits = 2,
+profit_tab <- t(sapply(profit, function(x)
+  c(mean(x + b) / a, mean(x), mean(x < 0), quantile(x, c(0.1, 0.5, 0.9)))))
+knitr::kable(profit_tab, digits = 2,
              col.names = c("E(V|d)", "E(profit|d)", "P(profit<0|d)", "P10", "P50", "P90"),
              caption = "Posterior summaries of $V$ and the profit $aV-b$ (5000 simulations).")
 ```
@@ -391,18 +399,16 @@ $\vA 1=0$ and the extra term disappears. So $p(\vd\mid T,B)$ and
 $p(T,B\mid\vd)$ are the same as in 2a.
 
 ```{r p3a}
-tau2_mu <- 0.25
-Sigma_m_mu <- Sigma_m + tau2_mu * matrix(1, n, n)            # Cov(m) with uncertain mu
-Sigma_d_mu <- A %*% Sigma_m_mu %*% t(A) + sigma2_eps * diag(n)
-L_d_save <- L_d
-L_d <- t(chol(Sigma_d_mu))                                    # loglik() now uses new Cov(d)
-zp1_mu <- zone_posterior(d1)
-L_d <- L_d_save                                               # restore
-diff3a <- c(cov_d = max(abs(Sigma_d_mu - Sigma_d)), post = max(abs(zp1_mu$post - zp1$post)))
+# ---- 3a ----
+tau2 <- 0.25
+S_prior_mu <- S_prior + tau2 * matrix(1, n, n)
+S_d_mu <- A %*% S_prior_mu %*% t(A) + s2e * diag(n)
+zone01_mu <- post_TB(d01, L = t(chol(S_d_mu)))
+max_diff <- max(abs(zone01_mu$prob - zone01$prob))
 ```
 
 Recomputing for seis01 gives the same posterior (largest difference
-`r signif(diff3a["post"], 2)`). This is not surprising, since the data say nothing about
+`r signif(max_diff, 2)`). This is not surprising, since the data say nothing about
 the overall level of $\vm$.
 
 ## 3b)
@@ -425,47 +431,49 @@ $p(\sigma_m^2\mid\vd)=\sum_{\mathcal G}p(T,B\mid\vd)\,\mathrm{IG}(\sigma_m^2;\al
 with $p(T,B\mid\vd)$ from 3c. We use $\alpha=2$, $\beta=1$ (prior mean 1) and $\nu=0.04$.
 
 ```{r p3b}
+# ---- 3b ----
 alpha <- 2; beta <- 1; nu <- 0.04
-C_mat <- A %*% (Sigma_m / sigma2_m) %*% t(A) + nu * diag(n)
-L_C   <- t(chol(C_mat))
-Q_TB  <- function(d) sapply(seq_len(nrow(G)), function(k) {
-  r <- forwardsolve(L_C, d - A %*% mu_TB(G$T[k], G$B[k]))
-  sum(r^2)
+C <- A %*% (S_prior / s2m) %*% t(A) + nu * diag(n)
+L_C <- t(chol(C))
+quad_form <- function(d) sapply(1:nrow(pairs), function(k) {
+  e <- forwardsolve(L_C, d - A %*% zone_mean(pairs$T[k], pairs$B[k]))
+  sum(e^2)
 })
 
-# 3c: p(T,B | d) with sigma_m^2 integrated out (Student-t marginal likelihood)
-zone_posterior_t <- function(Q) {
+# p(T, B | d) with s2m integrated out (used in 3c)
+post_TB_t <- function(Q) {
   lw <- -(alpha + n / 2) * log(beta + Q / 2)
-  exp(lw - log_sum_exp(lw))
+  exp(lw - logsumexp(lw))
 }
-Q1 <- Q_TB(d1); Q2 <- Q_TB(d2)
-pt1 <- zone_posterior_t(Q1); pt2 <- zone_posterior_t(Q2)
+Q01 <- quad_form(d01); Q02 <- quad_form(d02)
+zone01_t <- post_TB_t(Q01); zone02_t <- post_TB_t(Q02)
 
-# Posterior of sigma_m^2: mixture of inverse-gammas, summarised by simulation
-sim_sigma2 <- function(Q, w, N = 20000) {
-  k <- sample(length(w), N, replace = TRUE, prob = w)
-  1 / rgamma(N, shape = alpha + n / 2, rate = beta + Q[k] / 2)
+# draws from p(s2m | d), a mixture of inverse gammas
+draw_s2m <- function(Q, w, k = 20000) {
+  j <- sample(length(w), k, replace = TRUE, prob = w)
+  1 / rgamma(k, shape = alpha + n / 2, rate = beta + Q[j] / 2)
 }
 set.seed(6)
-s2_1 <- sim_sigma2(Q1, pt1); s2_2 <- sim_sigma2(Q2, pt2)
-tab3b <- rbind(seis01 = c(mean(s2_1), quantile(s2_1, c(0.025, 0.975))),
-               seis02 = c(mean(s2_2), quantile(s2_2, c(0.025, 0.975))))
-knitr::kable(tab3b, digits = 2, col.names = c("posterior mean", "2.5%", "97.5%"),
+s2m_01 <- draw_s2m(Q01, zone01_t); s2m_02 <- draw_s2m(Q02, zone02_t)
+s2m_tab <- rbind(seis01 = c(mean(s2m_01), quantile(s2m_01, c(0.025, 0.975))),
+                 seis02 = c(mean(s2m_02), quantile(s2m_02, c(0.025, 0.975))))
+knitr::kable(s2m_tab, digits = 2, col.names = c("posterior mean", "2.5%", "97.5%"),
              caption = "Posterior mean and 95\\% credibility interval for $\\sigma_m^2$.")
 ```
 
 ```{r p3bplot, fig.width=6, fig.height=3.2, fig.cap="Prior IG(2,1) (grey) and posterior densities of $\\sigma_m^2$ for seis01 and seis02."}
 dinvgamma <- function(x, a, b) exp(a * log(b) - lgamma(a) - (a + 1) * log(x) - b / x)
-mix_dens  <- function(x, Q, w) sapply(x, function(s)
-  sum(w * dinvgamma(s, alpha + n / 2, beta + Q / 2)))
-xs <- seq(0.05, 2.5, length.out = 400)
-plot(xs, mix_dens(xs, Q1, pt1), type = "l", lwd = 2, col = "#1b9e77",
-     xlab = expression(sigma[m]^2), ylab = "Density",
-     ylim = c(0, max(mix_dens(xs, Q2, pt2), mix_dens(xs, Q1, pt1))))
-lines(xs, mix_dens(xs, Q2, pt2), lwd = 2, col = "#d95f02")
-lines(xs, dinvgamma(xs, alpha, beta), lwd = 2, col = "grey60")
+dens_s2m <- function(x, Q, w) sapply(x, function(v) sum(w * dinvgamma(v, alpha + n / 2, beta + Q / 2)))
+
+x <- seq(0.05, 2.5, length.out = 400)
+f01 <- dens_s2m(x, Q01, zone01_t)
+f02 <- dens_s2m(x, Q02, zone02_t)
+plot(x, f01, type = "l", lwd = 2, col = "darkgreen", ylim = c(0, max(f01, f02)),
+     xlab = expression(sigma[m]^2), ylab = "Density")
+lines(x, f02, lwd = 2, col = "darkorange")
+lines(x, dinvgamma(x, alpha, beta), lwd = 2, col = "grey60")
 legend("topright", c("prior", "seis01", "seis02"), lwd = 2,
-       col = c("grey60", "#1b9e77", "#d95f02"), bty = "n")
+       col = c("grey60", "darkgreen", "darkorange"), bty = "n")
 ```
 
 ## 3c)
@@ -480,21 +488,22 @@ $p(T,B\mid\vd)\propto(\beta+\frac12Q_{T,B})^{-(\alpha+n/2)}$, compared with
 $\propto\exp(-\frac12Q_{T,B})$ for fixed $\sigma_m^2=1$.
 
 ```{r p3c}
-cmp <- function(pf, pt) {
-  kf <- which.max(pf); kt <- which.max(pt)
-  c(mode_fixed = paste0("(", G$T[kf], ",", G$B[kf], ")"), prob_fixed = round(pf[kf], 3),
-    E_dZ_fixed = round(sum(pf * G$dZ), 2),
-    mode_t = paste0("(", G$T[kt], ",", G$B[kt], ")"), prob_t = round(pt[kt], 3),
-    E_dZ_t = round(sum(pt * G$dZ), 2))
+# ---- 3c ----
+compare <- function(p_fix, p_t) {
+  i <- which.max(p_fix); j <- which.max(p_t)
+  c(mode_fix = paste0("(", pairs$T[i], ",", pairs$B[i], ")"), prob_fix = round(p_fix[i], 3),
+    dZ_fix = round(sum(p_fix * pairs$dZ), 2),
+    mode_t = paste0("(", pairs$T[j], ",", pairs$B[j], ")"), prob_t = round(p_t[j], 3),
+    dZ_t = round(sum(p_t * pairs$dZ), 2))
 }
-tab3c <- rbind(seis01 = cmp(zp1$post, pt1), seis02 = cmp(zp2$post, pt2))
-knitr::kable(tab3c, col.names = c("mode", "prob.", "E(dZ|d)", "mode", "prob.", "E(dZ|d)"),
+cmp_tab <- rbind(seis01 = compare(zone01$prob, zone01_t), seis02 = compare(zone02$prob, zone02_t))
+knitr::kable(cmp_tab, col.names = c("mode", "prob.", "E(dZ|d)", "mode", "prob.", "E(dZ|d)"),
              caption = "Posterior of $(T,B)$ with fixed $\\sigma_m^2=1$ (columns 1--3) and with $\\sigma_m^2$ integrated out (columns 4--6).")
 ```
 
 The most likely pair is the same, but the posterior is slightly wider: the
-probability of the mode drops from `r tab3c[1, "prob_fixed"]` to `r tab3c[1, "prob_t"]`
-(seis01) and from `r tab3c[2, "prob_fixed"]` to `r tab3c[2, "prob_t"]` (seis02).
+probability of the mode drops from `r cmp_tab[1, "prob_fix"]` to `r cmp_tab[1, "prob_t"]`
+(seis01) and from `r cmp_tab[2, "prob_fix"]` to `r cmp_tab[2, "prob_t"]` (seis02).
 
 \newpage
 
