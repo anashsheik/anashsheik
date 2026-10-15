@@ -224,6 +224,210 @@ $[`r round(min(rho_perm), 2)`,\ `r round(max(rho_perm), 2)`]$.
 ($p<0.001$), so the claim of exchangeability is rejected. Neighbouring samples are
 strongly correlated, as expected from $\vd=\vA\vm+\bm\varepsilon$.
 
+# Part 2
+
+## 2a)
+
+For a given $(T,B)$ only the prior mean changes, to $\bm\mu_m^{T,B}$; the covariance
+is as in Part 1. From 1a, the marginal distribution of the data is
+$$
+p(\vd\mid T,B)=N\big(\vd;\ \vA\bm\mu_m^{T,B},\ \bm\Sigma_d\big),\qquad
+\bm\Sigma_d=\vA\bm\Sigma_m\vA^\top+\sigma_\varepsilon^2\vI ,
+$$
+and Bayes' rule gives, for $(T,B)\in\mathcal G$,
+$$
+p(T,B\mid\vd)=\frac{p(\vd\mid T,B)\,p(T,B)}{\sum_{(T',B')\in\mathcal G}p(\vd\mid T',B')\,p(T',B')}
+\;\propto\;\exp\!\Big\{-\tfrac12(\vd-\vA\bm\mu_m^{T,B})^\top\bm\Sigma_d^{-1}(\vd-\vA\bm\mu_m^{T,B})\Big\},
+$$
+since the prior $p(T,B)=1/|\mathcal G|$ and the normalising constant of the Gaussian
+do not depend on $(T,B)$. Here $|\mathcal G|=751$ pairs.
+
+```{r p2setup}
+dmu <- 5
+G   <- subset(expand.grid(T = 30:60, B = 40:70), T <= B)    # admissible (T, B)
+G$dZ <- G$B - G$T + 1                                       # thickness
+
+# Prior mean for a zone from T to B (T = NA: no zone)
+mu_TB <- function(T, B) {
+  m <- rep(mu, n)
+  if (!is.na(T)) m[T:B] <- mu - dmu
+  m
+}
+
+Sigma_d <- A %*% Sigma_m %*% t(A) + sigma2_eps * diag(n)
+L_d     <- t(chol(Sigma_d))                                 # Sigma_d = L_d L_d^T
+
+# log p(d | mean) up to a constant common to all models
+loglik <- function(d, mean_m) {
+  r <- forwardsolve(L_d, d - A %*% mean_m)                  # L_d^-1 (d - A mu)
+  -0.5 * sum(r^2)
+}
+
+log_sum_exp <- function(x) max(x) + log(sum(exp(x - max(x))))
+
+zone_posterior <- function(d) {
+  ll <- sapply(seq_len(nrow(G)), function(k) loglik(d, mu_TB(G$T[k], G$B[k])))
+  list(ll = ll, post = exp(ll - log_sum_exp(ll)))           # uniform prior cancels
+}
+
+zp1 <- zone_posterior(d1)
+zp2 <- zone_posterior(d2)
+```
+
+```{r heatmaps, fig.width=7.5, fig.height=3.6, fig.cap="Joint posterior $p(T,B\\mid\\mathbf d)$ for seis01 (left) and seis02 (right). Grey: inadmissible pairs."}
+heat <- function(post, main) {
+  M <- matrix(NA, 31, 31, dimnames = list(30:60, 40:70))
+  M[cbind(G$T - 29, G$B - 39)] <- post
+  image(30:60, 40:70, M, col = hcl.colors(64, "YlOrRd", rev = TRUE),
+        xlab = "Top T", ylab = "Base B", main = main)
+  image(30:60, 40:70, ifelse(is.na(M), 1, NA), col = "grey85", add = TRUE)
+  box()
+}
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+heat(zp1$post, "seis01")
+heat(zp2$post, "seis02")
+```
+
+```{r priormarg, fig.width=7.5, fig.height=2.4, fig.cap="Marginal prior of top $T$, base $B$ and thickness $\\Delta Z$ (uniform prior on $\\mathcal G$)."}
+marg <- function(w, v, levels) sapply(levels, function(x) sum(w[v == x]))
+prior_G <- rep(1 / nrow(G), nrow(G))
+par(mfrow = c(1, 3), mar = c(4, 4, 1, 1))
+plot(30:60, marg(prior_G, G$T,  30:60), type = "h", lwd = 3, xlab = "Top T",  ylab = "Prior prob.")
+plot(40:70, marg(prior_G, G$B,  40:70), type = "h", lwd = 3, xlab = "Base B", ylab = "Prior prob.")
+plot(1:41,  marg(prior_G, G$dZ, 1:41),  type = "h", lwd = 3, xlab = "Thickness dZ", ylab = "Prior prob.")
+```
+
+```{r postmarg, fig.width=7.5, fig.height=4.4, fig.cap="Marginal posterior of $T$, $B$ and $\\Delta Z$. Top row: seis01, bottom row: seis02."}
+par(mfrow = c(2, 3), mar = c(4, 4, 1, 1))
+for (zp in list(zp1, zp2)) {
+  plot(30:60, marg(zp$post, G$T,  30:60), type = "h", lwd = 3, ylim = c(0, 1), xlab = "Top T",  ylab = "Posterior prob.")
+  plot(40:70, marg(zp$post, G$B,  40:70), type = "h", lwd = 3, ylim = c(0, 1), xlab = "Base B", ylab = "Posterior prob.")
+  plot(1:41,  marg(zp$post, G$dZ, 1:41),  type = "h", lwd = 3, ylim = c(0, 1), xlab = "Thickness dZ", ylab = "Posterior prob.")
+}
+```
+
+```{r p2summary}
+summ <- function(post) {
+  k <- which.max(post)
+  c(T = G$T[k], B = G$B[k], dZ = G$dZ[k], prob = post[k], E_dZ = sum(post * G$dZ))
+}
+tab2a <- rbind(seis01 = summ(zp1$post), seis02 = summ(zp2$post))
+knitr::kable(tab2a, digits = c(0, 0, 0, 3, 2),
+             col.names = c("T", "B", "dZ", "posterior prob.", "E(dZ | d)"),
+             caption = "Posterior mode of $(T,B)$, its probability, and posterior mean thickness.")
+```
+
+The uniform prior on $\mathcal G$ does not give uniform marginals, because the
+number of admissible partners varies. $T$ is uniform up to 40 and then decreasing,
+$B$ is increasing up to 50 and then uniform, and $\Delta Z$ is most likely around
+11 and least likely for very thick zones. The data overrule this completely. The posterior is concentrated on almost a single pair: a zone
+from `r tab2a[1, "T"]` to `r tab2a[1, "B"]` ($\Delta Z=`r tab2a[1, "dZ"]`$) for seis01,
+and from `r tab2a[2, "T"]` to `r tab2a[2, "B"]` ($\Delta Z=`r tab2a[2, "dZ"]`$) for
+seis02. The remaining uncertainty is at most one sample in $T$ or $B$. A shift of
+$\Delta\mu=5$ is large compared with $\sigma_m=1$ and gives strong reflections at the top
+and base of the zone, so they are easy to locate.
+
+## 2b)
+
+The no-zone case is a single model ($\bm\mu_m=\mu\mathbf 1$, as in Part 1), while the zone
+case consists of $|\mathcal G|=`r nrow(G)`$ models. Giving every one of the
+$`r nrow(G) + 1`$ models the same prior probability would give $P(\text{no zone})=1/`r nrow(G) + 1`$.
+That would say we are almost certain a zone exists, only because there are many
+ways to place it. The prior probability of the zero case should instead express
+our belief about whether a zone is present at all, and the remaining probability
+should then be spread over $\mathcal G$. We use
+$$
+P(\text{no zone})=\tfrac12,\qquad p(T,B)=\tfrac12\cdot\tfrac{1}{|\mathcal G|},\ (T,B)\in\mathcal G .
+$$
+Then
+$$
+P(\text{no zone}\mid\vd)=\frac{\tfrac12\,p(\vd\mid\text{no zone})}
+{\tfrac12\,p(\vd\mid\text{no zone})+\tfrac12\,\frac1{|\mathcal G|}\sum_{\mathcal G}p(\vd\mid T,B)} .
+$$
+
+```{r p2b}
+p0 <- 1 / 2
+post_zero <- function(zp, d) {
+  l0 <- log(p0)     + loglik(d, mu_TB(NA, NA))
+  lz <- log(1 - p0) + log_sum_exp(zp$ll) - log(nrow(G))
+  exp(l0 - log_sum_exp(c(l0, lz)))
+}
+pz <- c(seis01 = post_zero(zp1, d1), seis02 = post_zero(zp2, d2))
+```
+
+The posterior probability of zero thickness is `r signif(pz[1], 2)` for seis01 and
+`r signif(pz[2], 2)` for seis02. The data are so much more likely under the zone
+models that both data sets clearly indicate a zone. Any reasonable choice of
+$P(\text{no zone})$ gives the same conclusion.
+
+## 2c)
+
+Let the action be $a_1$ (invest) or $a_0$ (do not invest), with loss equal to minus the
+profit:
+$$
+L(a_1,V)=-(aV-b),\qquad L(a_0,V)=0 .
+$$
+The Bayes decision minimises the posterior expected loss:
+$E\{L(a_1,V)\mid\vd\}=-(aE(V\mid\vd)-b)$ and $E\{L(a_0,V)\mid\vd\}=0$. Hence
+$$
+\text{invest}\iff E(V\mid\vd)>\frac ba = 10 .
+$$
+$V$ is the exceedance volume from 1d. Its posterior combines the uncertainty in the
+zone and in $\vm$:
+$p(V\mid\vd)=\sum_{\text{models}}P(\text{model}\mid\vd)\,p(V\mid\vd,\text{model})$. We
+simulate a model (no zone or $(T,B)$) from its posterior (2b), and then
+$\vm\mid\vd,T,B\sim N(\bm\mu_{m\mid d}^{T,B},\bm\Sigma_{m\mid d})$ from 1a with prior mean
+$\bm\mu_m^{T,B}$, and compute $V=h(\vm)$.
+
+```{r p2c}
+a <- 1; b <- 10; B_mc <- 5000
+K_gain <- Sigma_m %*% t(A) %*% solve(Sigma_d)
+L_post <- t(chol(post0$cov + 1e-10 * diag(n)))             # same posterior covariance as 1c
+
+sim_V <- function(zp, d, pz0) {
+  w   <- c(pz0, (1 - pz0) * zp$post)                       # no zone + all (T, B)
+  Tm  <- c(NA, G$T); Bm <- c(NA, G$B)
+  idx <- sample(length(w), B_mc, replace = TRUE, prob = w)
+  sapply(idx, function(k) {
+    mu_k <- mu_TB(Tm[k], Bm[k])
+    m    <- mu_k + K_gain %*% (d - A %*% mu_k) + L_post %*% rnorm(n)
+    h_V(m)
+  })
+}
+set.seed(5)
+V1 <- sim_V(zp1, d1, pz[1])
+V2 <- sim_V(zp2, d2, pz[2])
+profit <- list(seis01 = a * V1 - b, seis02 = a * V2 - b)
+
+tab2c <- t(sapply(profit, function(x)
+  c(EV = mean(x + b) / a, E_profit = mean(x), P_loss = mean(x < 0),
+    P10 = unname(quantile(x, 0.1)), P50 = median(x), P90 = unname(quantile(x, 0.9)))))
+knitr::kable(tab2c, digits = 2,
+             col.names = c("E(V|d)", "E(profit|d)", "P(profit<0|d)", "P10", "P50", "P90"),
+             caption = "Posterior summaries of $V$ and the profit $aV-b$ (5000 simulations).")
+```
+
+```{r profithist, fig.width=7.5, fig.height=3, fig.cap="Posterior distribution of the profit $V-10$. Red line: break-even."}
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+for (nm in names(profit)) {
+  hist(profit[[nm]], breaks = 30, col = "grey80", border = "white", main = nm,
+       xlab = "Profit", xlim = range(-5, profit[[nm]]))
+  abline(v = 0, col = "red", lwd = 2)
+}
+```
+
+**Recommendation.** For both data sets $E(V\mid\vd)$ is far above $b/a=10$, so the
+recommendation is to invest in both cases. None of the 5000 simulations gives a loss in either case
+($P(\text{profit}<0\mid\vd)<1/5000$).
+The expected profit is much larger for seis02 (thicker zone). To the decision
+makers I would present the uncertainty as the profit distribution (histograms above) with
+$P_{10}$, $P_{50}$, $P_{90}$ and the probability of a loss, rather than a single number.
+
+If $V$ is instead read as the thickness $\Delta Z$, the rule becomes
+$E(\Delta Z\mid\vd)>10$. This gives
+$E(\Delta Z\mid\vd)=`r round(tab2a[1, "E_dZ"], 1)`$ (do not invest) for seis01 and
+`r round(tab2a[2, "E_dZ"], 1)` (invest) for seis02.
+
 \newpage
 
 # Appendix: R code
