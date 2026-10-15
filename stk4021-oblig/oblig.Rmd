@@ -8,11 +8,11 @@ output:
     number_sections: false
     fig_caption: true
 header-includes:
-  - \usepackage{amsmath,amssymb,bm,float}
-  - \newcommand{\vA}{\mathbf{A}}
-  - \newcommand{\vd}{\mathbf{d}}
-  - \newcommand{\vm}{\mathbf{m}}
-  - \newcommand{\vI}{\mathbf{I}}
+  - \usepackage{amsmath,amssymb,float}
+  - \newcommand{\vA}{A}
+  - \newcommand{\vd}{d}
+  - \newcommand{\vm}{m}
+  - \newcommand{\vI}{I}
 ---
 
 ```{r setup, include=FALSE}
@@ -79,24 +79,24 @@ band_plot <- function(mean, sd, main, ylim, sims = NULL) {
 
 ## 1a)
 
-$\vm$ and $\bm\varepsilon$ are independent and Gaussian, and $\vd$ is linear in them, so
+$\vm$ and $\varepsilon$ are independent and Gaussian, and $\vd$ is linear in them, so
 $(\vm,\vd)$ is jointly Gaussian with
 \begin{align*}
-E(\vd) &= \vA\bm\mu_m,\\
-\operatorname{Cov}(\vd) &= \vA\bm\Sigma_m\vA^\top+\sigma_\varepsilon^2\vI \;=:\; \bm\Sigma_d,\\
-\operatorname{Cov}(\vd,\vm) &= \operatorname{Cov}(\vA\vm+\bm\varepsilon,\vm)=\vA\bm\Sigma_m,
+E(\vd) &= \vA\mu_m,\\
+\operatorname{Cov}(\vd) &= \vA\Sigma_m\vA^\top+\sigma_\varepsilon^2\vI \;=:\; \Sigma_d,\\
+\operatorname{Cov}(\vd,\vm) &= \operatorname{Cov}(\vA\vm+\varepsilon,\vm)=\vA\Sigma_m,
 \end{align*}
 so
 $$
 \begin{pmatrix}\vm\\ \vd\end{pmatrix}\sim N\!\left(
-\begin{pmatrix}\bm\mu_m\\ \vA\bm\mu_m\end{pmatrix},
-\begin{pmatrix}\bm\Sigma_m & \bm\Sigma_m\vA^\top\\
-\vA\bm\Sigma_m & \bm\Sigma_d\end{pmatrix}\right).
+\begin{pmatrix}\mu_m\\ \vA\mu_m\end{pmatrix},
+\begin{pmatrix}\Sigma_m & \Sigma_m\vA^\top\\
+\vA\Sigma_m & \Sigma_d\end{pmatrix}\right).
 $$
-Conditioning on $\vd$ gives $\vm\mid\vd\sim N(\bm\mu_{m\mid d},\bm\Sigma_{m\mid d})$ with
+Conditioning on $\vd$ gives $\vm\mid\vd\sim N(\mu_{m\mid d},\Sigma_{m\mid d})$ with
 \begin{align*}
-\bm\mu_{m\mid d} &= \bm\mu_m+\bm\Sigma_m\vA^\top\bm\Sigma_d^{-1}(\vd-\vA\bm\mu_m),\\
-\bm\Sigma_{m\mid d} &= \bm\Sigma_m-\bm\Sigma_m\vA^\top\bm\Sigma_d^{-1}\vA\bm\Sigma_m .
+\mu_{m\mid d} &= \mu_m+\Sigma_m\vA^\top\Sigma_d^{-1}(\vd-\vA\mu_m),\\
+\Sigma_{m\mid d} &= \Sigma_m-\Sigma_m\vA^\top\Sigma_d^{-1}\vA\Sigma_m .
 \end{align*}
 
 ## 1b)
@@ -201,13 +201,13 @@ values ($p<0.001$). The data are therefore not exchangeable.
 
 Only the prior mean depends on $(T,B)$, so from 1a
 $$
-p(\vd\mid T,B)=N\big(\vd;\ \vA\bm\mu_m^{T,B},\ \bm\Sigma_d\big),\qquad
-\bm\Sigma_d=\vA\bm\Sigma_m\vA^\top+\sigma_\varepsilon^2\vI ,
+p(\vd\mid T,B)=N\big(\vd;\ \vA\mu_m^{T,B},\ \Sigma_d\big),\qquad
+\Sigma_d=\vA\Sigma_m\vA^\top+\sigma_\varepsilon^2\vI ,
 $$
 and by Bayes' rule, for $(T,B)\in\mathcal G$,
 $$
 p(T,B\mid\vd)=\frac{p(\vd\mid T,B)\,p(T,B)}{\sum_{(T',B')\in\mathcal G}p(\vd\mid T',B')\,p(T',B')}
-\;\propto\;\exp\!\Big\{-\tfrac12(\vd-\vA\bm\mu_m^{T,B})^\top\bm\Sigma_d^{-1}(\vd-\vA\bm\mu_m^{T,B})\Big\},
+\;\propto\;\exp\!\Big\{-\tfrac12(\vd-\vA\mu_m^{T,B})^\top\Sigma_d^{-1}(\vd-\vA\mu_m^{T,B})\Big\},
 $$
 since the uniform prior and the normalising constant do not depend on $(T,B)$.
 
@@ -243,7 +243,7 @@ zp1 <- zone_posterior(d1)
 zp2 <- zone_posterior(d2)
 ```
 
-```{r heatmaps, fig.width=7.5, fig.height=3.6, fig.cap="Joint posterior $p(T,B\\mid\\mathbf d)$ for seis01 (left) and seis02 (right). Grey: inadmissible pairs."}
+```{r heatmaps, fig.width=7.5, fig.height=3.6, fig.cap="Joint posterior $p(T,B\\mid d)$ for seis01 (left) and seis02 (right). Grey: inadmissible pairs."}
 heat <- function(post, main) {
   M <- matrix(NA, 31, 31, dimnames = list(30:60, 40:70))
   M[cbind(G$T - 29, G$B - 39)] <- post
@@ -327,7 +327,7 @@ $$
 \text{invest}\iff E(V\mid\vd)>\frac ba = 10 .
 $$
 We find $E(V\mid\vd)$ by simulation: draw $(T,B)$ (or no zone) from the posterior in 2b,
-draw $\vm$ from the posterior in 1a with prior mean $\bm\mu_m^{T,B}$, and compute $V$.
+draw $\vm$ from the posterior in 1a with prior mean $\mu_m^{T,B}$, and compute $V$.
 
 ```{r p2c}
 a <- 1; b <- 10; B_mc <- 5000
@@ -374,20 +374,20 @@ and the percentiles in the table.
 
 ## 3a)
 
-We write $\vm=\mu\mathbf 1-\Delta\mu\,\mathbf 1_{[T,B]}+\bm x$ with $\bm x\sim N(\mathbf 0,\bm\Sigma_m)$
+We write $\vm=\mu1-\Delta\mu\,1_{[T,B]}+x$ with $x\sim N(0,\Sigma_m)$
 independent of $\mu\sim N(\mu_0,\tau_\mu^2)$. By double expectation and total variance,
 \begin{align*}
-E(\vm) &= E\{E(\vm\mid\mu)\}=\mu_0\mathbf 1-\Delta\mu\,\mathbf 1_{[T,B]},\\
+E(\vm) &= E\{E(\vm\mid\mu)\}=\mu_01-\Delta\mu\,1_{[T,B]},\\
 \operatorname{Cov}(\vm) &= E\{\operatorname{Cov}(\vm\mid\mu)\}+\operatorname{Cov}\{E(\vm\mid\mu)\}
-=\bm\Sigma_m+\tau_\mu^2\mathbf 1\mathbf 1^\top ,
+=\Sigma_m+\tau_\mu^211^\top ,
 \end{align*}
 and therefore
 $$
 E(\vd)=\vA E(\vm),\qquad
-\operatorname{Cov}(\vd)=\vA\bm\Sigma_m\vA^\top+\tau_\mu^2(\vA\mathbf 1)(\vA\mathbf 1)^\top+\sigma_\varepsilon^2\vI .
+\operatorname{Cov}(\vd)=\vA\Sigma_m\vA^\top+\tau_\mu^2(\vA 1)(\vA 1)^\top+\sigma_\varepsilon^2\vI .
 $$
 With $\mu_0=0$ the mean is unchanged. The rows of $\vA$ sum to zero, so
-$\vA\mathbf 1=\mathbf 0$ and the extra term disappears. So $p(\vd\mid T,B)$ and
+$\vA 1=0$ and the extra term disappears. So $p(\vd\mid T,B)$ and
 $p(T,B\mid\vd)$ are the same as in 2a.
 
 ```{r p3a}
@@ -407,12 +407,12 @@ the overall level of $\vm$.
 
 ## 3b)
 
-With $\sigma_\varepsilon^2=\nu\sigma_m^2$ and $\mathbf R=\bm\Sigma_m/\sigma_m^2$ (the correlation
-matrix), $\operatorname{Cov}(\vd)=\sigma_m^2\mathbf C$ with $\mathbf C=\vA\mathbf R\vA^\top+\nu\vI$, so
+With $\sigma_\varepsilon^2=\nu\sigma_m^2$ and $R=\Sigma_m/\sigma_m^2$ (the correlation
+matrix), $\operatorname{Cov}(\vd)=\sigma_m^2C$ with $C=\vA R\vA^\top+\nu\vI$, so
 for a given $(T,B)$
 $$
 p(\vd\mid\sigma_m^2,T,B)\propto(\sigma_m^2)^{-n/2}\exp\Big\{-\frac{Q_{T,B}}{2\sigma_m^2}\Big\},\qquad
-Q_{T,B}=(\vd-\vA\bm\mu_m^{T,B})^\top\mathbf C^{-1}(\vd-\vA\bm\mu_m^{T,B}).
+Q_{T,B}=(\vd-\vA\mu_m^{T,B})^\top C^{-1}(\vd-\vA\mu_m^{T,B}).
 $$
 The conjugate prior is $\sigma_m^2\sim\mathrm{IG}(\alpha,\beta)$, and then
 $$
