@@ -99,8 +99,6 @@ $\vm\mid\vd\sim N(\bm\mu_{m\mid d},\bm\Sigma_{m\mid d})$ with
 \bm\mu_{m\mid d} &= \bm\mu_m+\bm\Sigma_m\vA^\top\bm\Sigma_d^{-1}(\vd-\vA\bm\mu_m),\\
 \bm\Sigma_{m\mid d} &= \bm\Sigma_m-\bm\Sigma_m\vA^\top\bm\Sigma_d^{-1}\vA\bm\Sigma_m .
 \end{align*}
-The pointwise 95% credibility interval for $m_i$ is
-$(\bm\mu_{m\mid d})_i\pm1.96\sqrt{(\bm\Sigma_{m\mid d})_{ii}}$.
 
 ## 1b)
 
@@ -113,10 +111,6 @@ set.seed(1)
 prior_sims <- rmvn(5, mu_m, Sigma_m)
 band_plot(mu_m, sqrt(diag(Sigma_m)), "Prior", ylim = c(-3.5, 3.5), sims = prior_sims)
 ```
-
-Since $\Sigma_{m,ii}=1$, the prior is $m_i\sim N(0,1)$ and the interval is $0\pm1.96$ for
-all $i$. The profiles are simulated as $\bm\mu_m+\mathbf L\bm x$, with
-$\mathbf L\mathbf L^\top=\bm\Sigma_m$ (Cholesky) and $\bm x\sim N(\mathbf 0,\vI)$.
 
 ## 1c)
 
@@ -140,17 +134,6 @@ cov_image(Sigma_m, "Prior covariance", zl)
 cov_image(post0$cov, "Posterior covariance", zl)
 ```
 
-```{r postnumbers}
-sd_range <- range(sd0)
-A_one    <- max(abs(A %*% rep(1, n)))      # A applied to a constant vector
-```
-
-The posterior standard deviations are `r round(sd_range[1], 2)`--`r round(sd_range[2], 2)`,
-compared with 1 in the prior. The uncertainty is reduced, but much remains, and the
-posterior covariance is spread further from the diagonal. One reason is that
-$\vA\mathbf 1=\mathbf 0$ (the rows of $\vA$ sum to zero). The data therefore
-contain no information about the overall level of $\vm$, only about local changes.
-
 ## 1d)
 
 ```{r exceedance}
@@ -169,10 +152,6 @@ knitr::kable(t(round(V_summary, 2)), caption = "Posterior summaries of $V$ ($B=1
 ```{r Vhist, fig.width=5.5, fig.height=3.2, fig.cap="Histogram of 100 posterior samples of $V$."}
 hist(V, breaks = 20, col = "grey80", border = "white", main = "", xlab = "V")
 ```
-
-We draw $\vm^{(b)}\sim N(\bm\mu_{m\mid d},\bm\Sigma_{m\mid d})$, $b=1,\dots,100$, and compute
-$V^{(b)}=h(\vm^{(b)})$. The posterior of $V$ is right-skewed, so the mean is larger
-than the median.
 
 ## 1e)
 
@@ -198,8 +177,7 @@ P\big(V_{(r)}\le P_{10}<V_{(s)}\big)=\sum_{k=r}^{s-1}\binom{100}{k}0.1^k0.9^{100
 $$
 With $r=`r r`$ and $s=`r s`$ this probability is `r round(coverage, 3)`, which gives
 the interval $[V_{(`r r`)},V_{(`r s`)}]=[`r round(Vs[r], 2)`,\ `r round(Vs[s], 2)`]$ for
-$P_{10}$. The interval is wide compared with the estimate, so $B=100$ is not
-sufficient for a precise $P_{10}$, and $B$ should be increased.
+$P_{10}$. The interval is wide compared with the estimate, so $B=100$ is not sufficient.
 
 ## 1f)
 
@@ -216,13 +194,8 @@ hist(rho_perm, breaks = 30, col = "grey80", border = "white", main = "",
 abline(v = rho_obs, col = "red", lwd = 2)
 ```
 
-If the data were exchangeable, the observed order would be as likely as any
-permutation, and $\hat\rho_1$ would look like the permuted values. The observed
-lag-1 correlation is $\hat\rho_1=`r round(rho_obs, 2)`$, while the permuted values lie in
-$[`r round(min(rho_perm), 2)`,\ `r round(max(rho_perm), 2)`]$.
-`r if (n_extreme == 0) "None" else n_extreme` of the 1000 permutations are as extreme
-($p<0.001$), so the claim of exchangeability is rejected. Neighbouring samples are
-strongly correlated, as expected from $\vd=\vA\vm+\bm\varepsilon$.
+The observed lag-1 correlation $\hat\rho_1=`r round(rho_obs, 2)`$ is larger than all 1000
+permuted values ($p<0.001$), so the claim that the data are exchangeable is rejected.
 
 # Part 2
 
@@ -240,7 +213,7 @@ p(T,B\mid\vd)=\frac{p(\vd\mid T,B)\,p(T,B)}{\sum_{(T',B')\in\mathcal G}p(\vd\mid
 \;\propto\;\exp\!\Big\{-\tfrac12(\vd-\vA\bm\mu_m^{T,B})^\top\bm\Sigma_d^{-1}(\vd-\vA\bm\mu_m^{T,B})\Big\},
 $$
 since the prior $p(T,B)=1/|\mathcal G|$ and the normalising constant of the Gaussian
-do not depend on $(T,B)$. Here $|\mathcal G|=751$ pairs.
+do not depend on $(T,B)$.
 
 ```{r p2setup}
 dmu <- 5
@@ -312,34 +285,25 @@ summ <- function(post) {
   c(T = G$T[k], B = G$B[k], dZ = G$dZ[k], prob = post[k], E_dZ = sum(post * G$dZ))
 }
 tab2a <- rbind(seis01 = summ(zp1$post), seis02 = summ(zp2$post))
-knitr::kable(tab2a, digits = c(0, 0, 0, 3, 2),
-             col.names = c("T", "B", "dZ", "posterior prob.", "E(dZ | d)"),
-             caption = "Posterior mode of $(T,B)$, its probability, and posterior mean thickness.")
 ```
 
-The uniform prior on $\mathcal G$ does not give uniform marginals, because the
-number of admissible partners varies. $T$ is uniform up to 40 and then decreasing,
-$B$ is increasing up to 50 and then uniform, and $\Delta Z$ is most likely around
-11 and least likely for very thick zones. The data overrule this completely. The posterior is concentrated on almost a single pair: a zone
-from `r tab2a[1, "T"]` to `r tab2a[1, "B"]` ($\Delta Z=`r tab2a[1, "dZ"]`$) for seis01,
-and from `r tab2a[2, "T"]` to `r tab2a[2, "B"]` ($\Delta Z=`r tab2a[2, "dZ"]`$) for
-seis02. The remaining uncertainty is at most one sample in $T$ or $B$. A shift of
-$\Delta\mu=5$ is large compared with $\sigma_m=1$ and gives strong reflections at the top
-and base of the zone, so they are easy to locate.
+The prior marginals are not uniform, because the number of admissible partners
+varies with $T$, $B$ and $\Delta Z$. The posterior is concentrated on
+$(T,B)=(`r tab2a[1, "T"]`,`r tab2a[1, "B"]`)$, $\Delta Z=`r tab2a[1, "dZ"]`$ for seis01 (probability
+`r round(tab2a[1, "prob"], 3)`) and $(`r tab2a[2, "T"]`,`r tab2a[2, "B"]`)$, $\Delta Z=`r tab2a[2, "dZ"]`$
+for seis02 (probability `r round(tab2a[2, "prob"], 3)`). The data determine the zone
+almost exactly, and the prior has little influence.
 
 ## 2b)
 
-The no-zone case is a single model ($\bm\mu_m=\mu\mathbf 1$, as in Part 1), while the zone
-case consists of $|\mathcal G|=`r nrow(G)`$ models. Giving every one of the
-$`r nrow(G) + 1`$ models the same prior probability would give $P(\text{no zone})=1/`r nrow(G) + 1`$.
-That would say we are almost certain a zone exists, only because there are many
-ways to place it. The prior probability of the zero case should instead express
-our belief about whether a zone is present at all, and the remaining probability
-should then be spread over $\mathcal G$. We use
+The no-zone case is one model, while the zone case consists of $|\mathcal G|=751$
+models. Equal prior probability for all models would give $P(\text{no zone})=1/752$,
+i.e. near certainty of a zone only because there are many ways to place it. The
+prior for the zero case should reflect our belief in whether a zone exists at all.
+We use
 $$
-P(\text{no zone})=\tfrac12,\qquad p(T,B)=\tfrac12\cdot\tfrac{1}{|\mathcal G|},\ (T,B)\in\mathcal G .
+P(\text{no zone})=\tfrac12,\qquad p(T,B)=\tfrac12\cdot\tfrac{1}{|\mathcal G|},\ (T,B)\in\mathcal G ,
 $$
-Then
 $$
 P(\text{no zone}\mid\vd)=\frac{\tfrac12\,p(\vd\mid\text{no zone})}
 {\tfrac12\,p(\vd\mid\text{no zone})+\tfrac12\,\frac1{|\mathcal G|}\sum_{\mathcal G}p(\vd\mid T,B)} .
@@ -355,10 +319,7 @@ post_zero <- function(zp, d) {
 pz <- c(seis01 = post_zero(zp1, d1), seis02 = post_zero(zp2, d2))
 ```
 
-The posterior probability of zero thickness is `r signif(pz[1], 2)` for seis01 and
-`r signif(pz[2], 2)` for seis02. The data are so much more likely under the zone
-models that both data sets clearly indicate a zone. Any reasonable choice of
-$P(\text{no zone})$ gives the same conclusion.
+$P(\text{no zone}\mid\vd)=`r signif(pz[1], 2)`$ for seis01 and $`r signif(pz[2], 2)`$ for seis02.
 
 ## 2c)
 
@@ -372,12 +333,9 @@ $E\{L(a_1,V)\mid\vd\}=-(aE(V\mid\vd)-b)$ and $E\{L(a_0,V)\mid\vd\}=0$. Hence
 $$
 \text{invest}\iff E(V\mid\vd)>\frac ba = 10 .
 $$
-$V$ is the exceedance volume from 1d. Its posterior combines the uncertainty in the
-zone and in $\vm$:
-$p(V\mid\vd)=\sum_{\text{models}}P(\text{model}\mid\vd)\,p(V\mid\vd,\text{model})$. We
-simulate a model (no zone or $(T,B)$) from its posterior (2b), and then
-$\vm\mid\vd,T,B\sim N(\bm\mu_{m\mid d}^{T,B},\bm\Sigma_{m\mid d})$ from 1a with prior mean
-$\bm\mu_m^{T,B}$, and compute $V=h(\vm)$.
+$E(V\mid\vd)$ is computed by simulation: draw the model (no zone or $(T,B)$) from
+its posterior (2b), then $\vm\mid\vd,T,B$ from 1a with prior mean $\bm\mu_m^{T,B}$, and
+compute $V=h(\vm)$.
 
 ```{r p2c}
 a <- 1; b <- 10; B_mc <- 5000
@@ -416,17 +374,9 @@ for (nm in names(profit)) {
 }
 ```
 
-**Recommendation.** For both data sets $E(V\mid\vd)$ is far above $b/a=10$, so the
-recommendation is to invest in both cases. None of the 5000 simulations gives a loss in either case
-($P(\text{profit}<0\mid\vd)<1/5000$).
-The expected profit is much larger for seis02 (thicker zone). To the decision
-makers I would present the uncertainty as the profit distribution (histograms above) with
-$P_{10}$, $P_{50}$, $P_{90}$ and the probability of a loss, rather than a single number.
-
-If $V$ is instead read as the thickness $\Delta Z$, the rule becomes
-$E(\Delta Z\mid\vd)>10$. This gives
-$E(\Delta Z\mid\vd)=`r round(tab2a[1, "E_dZ"], 1)`$ (do not invest) for seis01 and
-`r round(tab2a[2, "E_dZ"], 1)` (invest) for seis02.
+**Recommendation:** invest in both cases, since $E(V\mid\vd)$ is far above $b/a=10$.
+None of the 5000 simulations gives a loss. The uncertainty is presented by the
+profit distribution (histograms), its $P_{10}$, $P_{50}$, $P_{90}$ and the probability of a loss.
 
 # Part 3
 
@@ -459,12 +409,9 @@ L_d <- L_d_save                                               # restore
 diff3a <- c(cov_d = max(abs(Sigma_d_mu - Sigma_d)), post = max(abs(zp1_mu$post - zp1$post)))
 ```
 
-Numerically, for seis01, the largest change in $\operatorname{Cov}(\vd)$ is
-`r signif(diff3a["cov_d"], 2)` and the largest change in $p(T,B\mid\vd)$ is
-`r signif(diff3a["post"], 2)` (rounding error). The result is not surprising. The
-data only see changes in $\vm$ (1c), so uncertainty about a common level
-cannot affect the inference about $T$ and $B$. It only adds uncertainty about the
-absolute level of $\vm$.
+Recomputing $p(T,B\mid\vd)$ for seis01 gives the same posterior as in 2a (largest
+difference `r signif(diff3a["post"], 2)`). This is not surprising: the data contain
+no information about a common level of $\vm$.
 
 ## 3b)
 
@@ -483,8 +430,7 @@ p(\sigma_m^2\mid\vd,T,B)\propto(\sigma_m^2)^{-(\alpha+n/2)-1}\exp\Big\{-\frac{\b
 $$
 Since $(T,B)$ is unknown,
 $p(\sigma_m^2\mid\vd)=\sum_{\mathcal G}p(T,B\mid\vd)\,\mathrm{IG}(\sigma_m^2;\alpha+\frac n2,\beta+\frac12Q_{T,B})$,
-with $p(T,B\mid\vd)$ from 3c. We use $\alpha=2,\ \beta=1$ (prior mean 1, the value used
-so far, and heavy tails) and $\nu=0.04$, so $\mathbf C$ is the same matrix as $\bm\Sigma_d$ in Part 2.
+with $p(T,B\mid\vd)$ from 3c. We use $\alpha=2$, $\beta=1$ (prior mean 1) and $\nu=0.04$.
 
 ```{r p3b}
 alpha <- 2; beta <- 1; nu <- 0.04
@@ -530,22 +476,16 @@ legend("topright", c("prior", "seis01", "seis02"), lwd = 2,
        col = c("grey60", "#1b9e77", "#d95f02"), bty = "n")
 ```
 
-The posterior is much narrower than the prior. For seis01 it is centred somewhat
-above the value $\sigma_m^2=1$ that was assumed in Parts 1--2, and for seis02 close to it.
-
 ## 3c)
 
-The variance uncertainty is accounted for by integrating $\sigma_m^2$ out of the
-likelihood instead of fixing it:
+The uncertainty is accounted for by integrating $\sigma_m^2$ out:
 $$
 p(\vd\mid T,B)=\int p(\vd\mid\sigma_m^2,T,B)\,p(\sigma_m^2)\,d\sigma_m^2
-\;\propto\;\Big(\beta+\tfrac12Q_{T,B}\Big)^{-(\alpha+n/2)},
+\;\propto\;\Big(\beta+\tfrac12Q_{T,B}\Big)^{-(\alpha+n/2)}
 $$
-which is a multivariate Student-$t$ density with $2\alpha$ degrees of freedom. The
-factor $|\mathbf C|^{-1/2}$ and the gamma-function constants are the same for all
-$(T,B)$. With the uniform prior on $\mathcal G$,
-$p(T,B\mid\vd)\propto(\beta+\frac12Q_{T,B})^{-(\alpha+n/2)}$. For fixed $\sigma_m^2=1$ it was
-$\propto\exp(-\frac12Q_{T,B})$.
+(a multivariate Student-$t$ density), so
+$p(T,B\mid\vd)\propto(\beta+\frac12Q_{T,B})^{-(\alpha+n/2)}$, compared with
+$\propto\exp(-\frac12Q_{T,B})$ for fixed $\sigma_m^2=1$.
 
 ```{r p3c}
 cmp <- function(pf, pt) {
@@ -560,14 +500,9 @@ knitr::kable(tab3c, col.names = c("mode", "prob.", "E(dZ|d)", "mode", "prob.", "
              caption = "Posterior of $(T,B)$ with fixed $\\sigma_m^2=1$ (columns 1--3) and with $\\sigma_m^2$ integrated out (columns 4--6).")
 ```
 
-The most probable pair is unchanged. With $\sigma_m^2$ integrated out, the posterior is
-slightly less concentrated: the probability of the mode falls from
-`r tab3c[1, "prob_fixed"]` to `r tab3c[1, "prob_t"]` for seis01, and from
-`r tab3c[2, "prob_fixed"]` to `r tab3c[2, "prob_t"]` for seis02. The reason is that the
-data suggest a scale at or above 1 (3b). A larger scale makes the neighbouring
-pairs relatively more plausible, and the heavier Student-$t$ tails also allow more
-spread. The effect is largest for seis01, where $E(\sigma_m^2\mid\vd)$ is furthest from 1.
-The conclusions from Part 2 do not change.
+The most probable pair is unchanged, but the posterior is slightly wider: the
+probability of the mode falls from `r tab3c[1, "prob_fixed"]` to `r tab3c[1, "prob_t"]`
+(seis01) and from `r tab3c[2, "prob_fixed"]` to `r tab3c[2, "prob_t"]` (seis02).
 
 \newpage
 
