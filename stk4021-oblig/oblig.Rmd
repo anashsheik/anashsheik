@@ -79,8 +79,8 @@ band_plot <- function(mean, sd, main, ylim, sims = NULL) {
 
 ## 1a)
 
-Since $\vm$ and $\bm\varepsilon$ are independent and Gaussian, $(\vm,\vd)$ is a linear
-transformation of a Gaussian vector and therefore jointly Gaussian, with
+$\vm$ and $\bm\varepsilon$ are independent and Gaussian, and $\vd$ is linear in them, so
+$(\vm,\vd)$ is jointly Gaussian with
 \begin{align*}
 E(\vd) &= \vA\bm\mu_m,\\
 \operatorname{Cov}(\vd) &= \vA\bm\Sigma_m\vA^\top+\sigma_\varepsilon^2\vI \;=:\; \bm\Sigma_d,\\
@@ -93,8 +93,7 @@ $$
 \begin{pmatrix}\bm\Sigma_m & \bm\Sigma_m\vA^\top\\
 \vA\bm\Sigma_m & \bm\Sigma_d\end{pmatrix}\right).
 $$
-The conditional distribution of a partitioned Gaussian gives the posterior
-$\vm\mid\vd\sim N(\bm\mu_{m\mid d},\bm\Sigma_{m\mid d})$ with
+Conditioning on $\vd$ gives $\vm\mid\vd\sim N(\bm\mu_{m\mid d},\bm\Sigma_{m\mid d})$ with
 \begin{align*}
 \bm\mu_{m\mid d} &= \bm\mu_m+\bm\Sigma_m\vA^\top\bm\Sigma_d^{-1}(\vd-\vA\bm\mu_m),\\
 \bm\Sigma_{m\mid d} &= \bm\Sigma_m-\bm\Sigma_m\vA^\top\bm\Sigma_d^{-1}\vA\bm\Sigma_m .
@@ -167,17 +166,16 @@ s <- qbinom(0.975, B, 0.1) + 1
 coverage <- pbinom(s - 1, B, 0.1) - pbinom(r - 1, B, 0.1)
 ```
 
-Estimates from the ordered samples: $\widehat P_{10}=V_{(10)}=`r round(P10, 2)`$ and
-$\widehat P_{90}=V_{(90)}=`r round(P90, 2)`$.
+We use the 10th and 90th smallest of the 100 samples:
+$\widehat P_{10}=`r round(P10, 2)`$ and $\widehat P_{90}=`r round(P90, 2)`$.
 
-The number of samples below $P_{10}$ is $N\sim\mathrm{Bin}(100,0.1)$. Since
-$V_{(r)}\le P_{10}<V_{(s)}$ exactly when $r\le N\le s-1$,
+The number of samples below $P_{10}$ is $N\sim\mathrm{Bin}(100,0.1)$, and $P_{10}$ lies
+between the $r$-th and $s$-th smallest sample when $r\le N\le s-1$:
 $$
 P\big(V_{(r)}\le P_{10}<V_{(s)}\big)=\sum_{k=r}^{s-1}\binom{100}{k}0.1^k0.9^{100-k}.
 $$
-With $r=`r r`$ and $s=`r s`$ this probability is `r round(coverage, 3)`, which gives
-the interval $[V_{(`r r`)},V_{(`r s`)}]=[`r round(Vs[r], 2)`,\ `r round(Vs[s], 2)`]$ for
-$P_{10}$. The interval is wide compared with the estimate, so $B=100$ is not sufficient.
+With $r=`r r`$ and $s=`r s`$ this is `r round(coverage, 3)`, so a 95% interval for $P_{10}$ is
+$[`r round(Vs[r], 2)`,\ `r round(Vs[s], 2)`]$. This is wide, so 100 samples is not enough.
 
 ## 1f)
 
@@ -194,26 +192,24 @@ hist(rho_perm, breaks = 30, col = "grey80", border = "white", main = "",
 abline(v = rho_obs, col = "red", lwd = 2)
 ```
 
-The observed lag-1 correlation $\hat\rho_1=`r round(rho_obs, 2)`$ is larger than all 1000
-permuted values ($p<0.001$), so the claim that the data are exchangeable is rejected.
+The observed lag-1 correlation is `r round(rho_obs, 2)`, larger than all 1000 permuted
+values ($p<0.001$). The data are therefore not exchangeable.
 
 # Part 2
 
 ## 2a)
 
-For a given $(T,B)$ only the prior mean changes, to $\bm\mu_m^{T,B}$; the covariance
-is as in Part 1. From 1a, the marginal distribution of the data is
+Only the prior mean depends on $(T,B)$, so from 1a
 $$
 p(\vd\mid T,B)=N\big(\vd;\ \vA\bm\mu_m^{T,B},\ \bm\Sigma_d\big),\qquad
 \bm\Sigma_d=\vA\bm\Sigma_m\vA^\top+\sigma_\varepsilon^2\vI ,
 $$
-and Bayes' rule gives, for $(T,B)\in\mathcal G$,
+and by Bayes' rule, for $(T,B)\in\mathcal G$,
 $$
 p(T,B\mid\vd)=\frac{p(\vd\mid T,B)\,p(T,B)}{\sum_{(T',B')\in\mathcal G}p(\vd\mid T',B')\,p(T',B')}
 \;\propto\;\exp\!\Big\{-\tfrac12(\vd-\vA\bm\mu_m^{T,B})^\top\bm\Sigma_d^{-1}(\vd-\vA\bm\mu_m^{T,B})\Big\},
 $$
-since the prior $p(T,B)=1/|\mathcal G|$ and the normalising constant of the Gaussian
-do not depend on $(T,B)$.
+since the uniform prior and the normalising constant do not depend on $(T,B)$.
 
 ```{r p2setup}
 dmu <- 5
@@ -287,20 +283,18 @@ summ <- function(post) {
 tab2a <- rbind(seis01 = summ(zp1$post), seis02 = summ(zp2$post))
 ```
 
-The prior marginals are not uniform, because the number of admissible partners
-varies with $T$, $B$ and $\Delta Z$. The posterior is concentrated on
-$(T,B)=(`r tab2a[1, "T"]`,`r tab2a[1, "B"]`)$, $\Delta Z=`r tab2a[1, "dZ"]`$ for seis01 (probability
-`r round(tab2a[1, "prob"], 3)`) and $(`r tab2a[2, "T"]`,`r tab2a[2, "B"]`)$, $\Delta Z=`r tab2a[2, "dZ"]`$
-for seis02 (probability `r round(tab2a[2, "prob"], 3)`). The data determine the zone
-almost exactly, and the prior has little influence.
+The prior marginals are not uniform, since the number of possible partners varies.
+The posterior puts almost all mass on $(41,46)$ for seis01 (probability
+`r round(tab2a[1, "prob"], 3)`) and $(41,61)$ for seis02 (probability
+`r round(tab2a[2, "prob"], 3)`), i.e. thickness `r tab2a[1, "dZ"]` and `r tab2a[2, "dZ"]`.
+The data determine the zone almost exactly.
 
 ## 2b)
 
-The no-zone case is one model, while the zone case consists of $|\mathcal G|=751$
-models. Equal prior probability for all models would give $P(\text{no zone})=1/752$,
-i.e. near certainty of a zone only because there are many ways to place it. The
-prior for the zero case should reflect our belief in whether a zone exists at all.
-We use
+If all 752 models (751 zones and no zone) got the same prior probability,
+$P(\text{no zone})$ would be only $1/752$, just because there are many ways to place a
+zone. The prior for the zero case should instead reflect how likely we think it is
+that a zone exists. We set $P(\text{no zone})=1/2$ and spread the rest uniformly over $\mathcal G$:
 $$
 P(\text{no zone})=\tfrac12,\qquad p(T,B)=\tfrac12\cdot\tfrac{1}{|\mathcal G|},\ (T,B)\in\mathcal G ,
 $$
@@ -319,23 +313,21 @@ post_zero <- function(zp, d) {
 pz <- c(seis01 = post_zero(zp1, d1), seis02 = post_zero(zp2, d2))
 ```
 
-$P(\text{no zone}\mid\vd)=`r signif(pz[1], 2)`$ for seis01 and $`r signif(pz[2], 2)`$ for seis02.
+This gives $P(\text{no zone}\mid\vd)=`r signif(pz[1], 2)`$ for seis01 and $`r signif(pz[2], 2)`$ for seis02.
 
 ## 2c)
 
-Let the action be $a_1$ (invest) or $a_0$ (do not invest), with loss equal to minus the
-profit:
+Let $a_1$ = invest and $a_0$ = do not invest, with loss equal to minus the profit:
 $$
 L(a_1,V)=-(aV-b),\qquad L(a_0,V)=0 .
 $$
-The Bayes decision minimises the posterior expected loss:
-$E\{L(a_1,V)\mid\vd\}=-(aE(V\mid\vd)-b)$ and $E\{L(a_0,V)\mid\vd\}=0$. Hence
+The Bayes decision minimises the expected posterior loss. Since
+$E\{L(a_1,V)\mid\vd\}=-(aE(V\mid\vd)-b)$ and $E\{L(a_0,V)\mid\vd\}=0$, the rule is
 $$
 \text{invest}\iff E(V\mid\vd)>\frac ba = 10 .
 $$
-$E(V\mid\vd)$ is computed by simulation: draw the model (no zone or $(T,B)$) from
-its posterior (2b), then $\vm\mid\vd,T,B$ from 1a with prior mean $\bm\mu_m^{T,B}$, and
-compute $V=h(\vm)$.
+We find $E(V\mid\vd)$ by simulation: draw $(T,B)$ (or no zone) from the posterior in 2b,
+draw $\vm$ from the posterior in 1a with prior mean $\bm\mu_m^{T,B}$, and compute $V$.
 
 ```{r p2c}
 a <- 1; b <- 10; B_mc <- 5000
@@ -374,15 +366,15 @@ for (nm in names(profit)) {
 }
 ```
 
-**Recommendation:** invest in both cases, since $E(V\mid\vd)$ is far above $b/a=10$.
-None of the 5000 simulations gives a loss. The uncertainty is presented by the
-profit distribution (histograms), its $P_{10}$, $P_{50}$, $P_{90}$ and the probability of a loss.
+We recommend investing in both cases, since $E(V\mid\vd)$ is far above 10 and none of
+the 5000 simulations gave a loss. The uncertainty is shown by the profit histograms
+and the percentiles in the table.
 
 # Part 3
 
 ## 3a)
 
-Write $\vm=\mu\mathbf 1-\Delta\mu\,\mathbf 1_{[T,B]}+\bm x$ with $\bm x\sim N(\mathbf 0,\bm\Sigma_m)$
+We write $\vm=\mu\mathbf 1-\Delta\mu\,\mathbf 1_{[T,B]}+\bm x$ with $\bm x\sim N(\mathbf 0,\bm\Sigma_m)$
 independent of $\mu\sim N(\mu_0,\tau_\mu^2)$. By double expectation and total variance,
 \begin{align*}
 E(\vm) &= E\{E(\vm\mid\mu)\}=\mu_0\mathbf 1-\Delta\mu\,\mathbf 1_{[T,B]},\\
@@ -394,9 +386,9 @@ $$
 E(\vd)=\vA E(\vm),\qquad
 \operatorname{Cov}(\vd)=\vA\bm\Sigma_m\vA^\top+\tau_\mu^2(\vA\mathbf 1)(\vA\mathbf 1)^\top+\sigma_\varepsilon^2\vI .
 $$
-With $\mu_0=0$ the mean is unchanged. Since the rows of $\vA$ sum to zero,
-$\vA\mathbf 1=\mathbf 0$, so the extra term vanishes and $\operatorname{Cov}(\vd)$ is also
-unchanged. Hence $p(\vd\mid T,B)$, and so $p(T,B\mid\vd)$, are exactly the same as in 2a.
+With $\mu_0=0$ the mean is unchanged. The rows of $\vA$ sum to zero, so
+$\vA\mathbf 1=\mathbf 0$ and the extra term disappears. So $p(\vd\mid T,B)$ and
+$p(T,B\mid\vd)$ are the same as in 2a.
 
 ```{r p3a}
 tau2_mu <- 0.25
@@ -409,9 +401,9 @@ L_d <- L_d_save                                               # restore
 diff3a <- c(cov_d = max(abs(Sigma_d_mu - Sigma_d)), post = max(abs(zp1_mu$post - zp1$post)))
 ```
 
-Recomputing $p(T,B\mid\vd)$ for seis01 gives the same posterior as in 2a (largest
-difference `r signif(diff3a["post"], 2)`). This is not surprising: the data contain
-no information about a common level of $\vm$.
+Recomputing for seis01 gives the same posterior (largest difference
+`r signif(diff3a["post"], 2)`). This is not surprising, since the data say nothing about
+the overall level of $\vm$.
 
 ## 3b)
 
@@ -478,7 +470,7 @@ legend("topright", c("prior", "seis01", "seis02"), lwd = 2,
 
 ## 3c)
 
-The uncertainty is accounted for by integrating $\sigma_m^2$ out:
+We account for the uncertainty by integrating $\sigma_m^2$ out:
 $$
 p(\vd\mid T,B)=\int p(\vd\mid\sigma_m^2,T,B)\,p(\sigma_m^2)\,d\sigma_m^2
 \;\propto\;\Big(\beta+\tfrac12Q_{T,B}\Big)^{-(\alpha+n/2)}
@@ -500,8 +492,8 @@ knitr::kable(tab3c, col.names = c("mode", "prob.", "E(dZ|d)", "mode", "prob.", "
              caption = "Posterior of $(T,B)$ with fixed $\\sigma_m^2=1$ (columns 1--3) and with $\\sigma_m^2$ integrated out (columns 4--6).")
 ```
 
-The most probable pair is unchanged, but the posterior is slightly wider: the
-probability of the mode falls from `r tab3c[1, "prob_fixed"]` to `r tab3c[1, "prob_t"]`
+The most likely pair is the same, but the posterior is slightly wider: the
+probability of the mode drops from `r tab3c[1, "prob_fixed"]` to `r tab3c[1, "prob_t"]`
 (seis01) and from `r tab3c[2, "prob_fixed"]` to `r tab3c[2, "prob_t"]` (seis02).
 
 \newpage
